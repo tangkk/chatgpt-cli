@@ -1,12 +1,7 @@
 #!/usr/bin/env node
 
 import process from "node:process";
-import {
-  closeLoginBrowser,
-  launchBrowser,
-  launchLoginBrowser,
-  profileDir,
-} from "./browser.js";
+import { launchBrowser, profileDir } from "./browser.js";
 import {
   listConversations,
   openChatGPT,
@@ -15,6 +10,7 @@ import {
   requireLogin,
   sendMessage,
   isLoggedIn,
+  waitForLogin,
 } from "./chatgpt.js";
 import {
   chooseConversation,
@@ -41,12 +37,12 @@ Usage:
   chatgpt-web chrome-check         Check the existing-Chrome bridge
   chatgpt-web chrome-list          List chats from existing Chrome
 
-Isolated-profile fallback:
-  chatgpt-web login                Sign in using a dedicated Chrome profile
-  chatgpt-web status               Verify the dedicated profile login
-  chatgpt-web list [--limit N]     List chats from the dedicated profile
-  chatgpt-web chat [ID]            Continue a dedicated-profile chat
-  chatgpt-web new                  Start a dedicated-profile chat
+Independent background Chrome (CDP):
+  chatgpt-web background-login     Sign in using a dedicated Chrome profile
+  chatgpt-web background-status    Verify the dedicated profile login
+  chatgpt-web background-list      List chats from the dedicated profile
+  chatgpt-web background [ID]      Continue a chat in headless Chrome
+  chatgpt-web background-new       Start a chat in headless Chrome
 
 Options:
   --headed                         Show Chrome (useful for login challenges)
@@ -83,39 +79,26 @@ function parseArgs(argv) {
 
 async function login() {
   console.log(`Using browser profile: ${profileDir()}`);
-  console.log("Opening ordinary Chrome without Playwright automation flags.");
-  console.log("Complete the ChatGPT sign-in, then return here and press Enter.");
-  const terminal = createTerminal();
-  const loginBrowser = await launchLoginBrowser();
+  console.log("Opening a dedicated Chrome connected through a local CDP port.");
+  console.log("Complete the ChatGPT sign-in in that window. It will close after login is detected.");
+  const session = await launchBrowser({ headed: true });
   try {
-    await terminal.question("");
-  } finally {
-    terminal.close();
-    await closeLoginBrowser(loginBrowser);
-  }
-
-  const { context, page } = await launchBrowser();
-  try {
-    await openChatGPT(page);
-    if (!(await isLoggedIn(page))) {
-      throw new Error(
-        "ChatGPT login was not detected. Run `chatgpt-web login` again and make sure ChatGPT shows your signed-in account before pressing Enter.",
-      );
-    }
+    await openChatGPT(session.page);
+    await waitForLogin(session.page);
     console.log("ChatGPT login verified and saved successfully.");
   } finally {
-    await context.close();
+    await session.close();
   }
 }
 
 async function withBrowser(options, callback) {
-  const { context, page } = await launchBrowser(options);
+  const session = await launchBrowser(options);
   try {
-    await openChatGPT(page);
-    await requireLogin(page);
-    return await callback(page);
+    await openChatGPT(session.page);
+    await requireLogin(session.page);
+    return await callback(session.page);
   } finally {
-    await context.close();
+    await session.close();
   }
 }
 
@@ -127,14 +110,14 @@ async function list({ headed, limit }) {
 }
 
 async function status({ headed }) {
-  const { context, page } = await launchBrowser({ headed });
+  const session = await launchBrowser({ headed });
   try {
-    await openChatGPT(page);
-    const authenticated = await isLoggedIn(page);
+    await openChatGPT(session.page);
+    const authenticated = await isLoggedIn(session.page);
     console.log(authenticated ? "Signed in to ChatGPT." : "Not signed in to ChatGPT.");
     if (!authenticated) process.exitCode = 1;
   } finally {
-    await context.close();
+    await session.close();
   }
 }
 
@@ -272,11 +255,13 @@ async function main() {
   if (options.command === "chrome") return chromeChat(options);
   if (options.command === "chrome-check") return chromeCheck();
   if (options.command === "chrome-list") return chromeList(options);
-  if (options.command === "login") return login();
-  if (options.command === "status") return status(options);
-  if (options.command === "list") return list(options);
-  if (options.command === "chat") return chat(options);
-  if (options.command === "new") return chat({ ...options, forceNew: true });
+  if (["login", "background-login"].includes(options.command)) return login();
+  if (["status", "background-status"].includes(options.command)) return status(options);
+  if (["list", "background-list"].includes(options.command)) return list(options);
+  if (["chat", "background"].includes(options.command)) return chat(options);
+  if (["new", "background-new"].includes(options.command)) {
+    return chat({ ...options, forceNew: true });
+  }
   throw new Error(`Unknown command: ${options.command}`);
 }
 

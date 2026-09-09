@@ -127,21 +127,38 @@ Commands available during a chat:
 /quit                       Exit
 ```
 
-## Optional isolated-profile fallback
+## Independent background Chrome (CDP)
 
-The project also contains an experimental Playwright-based mode with a separate
-Chrome profile:
+For SSH use while the desktop is locked, the client can start an independent
+Chrome process and connect to it through a loopback-only Chrome DevTools
+Protocol (CDP) port. This mode uses a separate Chrome profile and does not read
+or modify your regular Chrome profile.
+
+Sign in once while the desktop is unlocked:
 
 ```bash
-chatgpt-web login
-chatgpt-web status
-chatgpt-web list
-chatgpt-web chat [conversation-id]
-chatgpt-web new
+chatgpt-web background-login
 ```
 
-Some identity providers reject automated browser login. Existing-Chrome mode is
-therefore recommended.
+The dedicated window closes automatically after the ChatGPT session is
+detected. Afterwards, including over SSH with the desktop locked, use:
+
+```bash
+chatgpt-web background-status
+chatgpt-web background-list
+chatgpt-web background [conversation-id]
+chatgpt-web background-new
+```
+
+`background` launches Chrome with `--headless=new` and disables Chrome's
+background rendering throttles. The CDP endpoint listens only on
+`127.0.0.1` and exists only while the command is running. The legacy command
+names `login`, `status`, `list`, `chat`, and `new` remain as aliases.
+
+Some identity providers may reject a browser with remote debugging enabled. If
+Google sign-in refuses the dedicated browser, use another sign-in method offered
+by ChatGPT where possible. This mode cannot copy authentication from your
+regular Chrome profile.
 
 The isolated profile is stored under `CHATGPT_WEB_CLI_HOME` and must never be
 committed, shared, or copied to an untrusted machine. Treat it like a password.
@@ -152,6 +169,9 @@ committed, shared, or copied to an untrusted machine. Treat it like a password.
   written to this repository.
 - Existing-Chrome mode executes JavaScript only in tabs whose URL starts with
   `https://chatgpt.com/`.
+- Background mode exposes CDP on a random loopback port only while the command
+  is running. Its dedicated profile remains mode `0700` under
+  `CHATGPT_WEB_CLI_HOME`.
 - Conversation text is read from the visible ChatGPT DOM only when needed for
   terminal output.
 - Prompts and responses still pass through ChatGPT and remain subject to your
@@ -174,6 +194,8 @@ npm test
 - Text chat is supported; attachments, voice, model selection, canvas, and
   custom GPT controls are not implemented.
 - The existing-Chrome integration currently requires macOS and Google Chrome.
+- Background mode requires a one-time headed login and may occasionally require
+  reauthentication when ChatGPT expires the dedicated profile's session.
 
 ## License
 

@@ -1,7 +1,8 @@
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
-import { spawn } from "node:child_process";
+import net from "node:net";
+import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
 import { chromium } from "playwright-core";
 
@@ -33,24 +34,79 @@ export function chromeExecutable() {
   );
 }
 
-export function loginChromeArgs() {
+export function chromeUserAgent(executable = chromeExecutable()) {
+  const output = execFileSync(executable, ["--version"], { encoding: "utf8" });
+  const version = output.match(/(\d+(?:\.\d+){3})/)?.[1];
+  if (!version) throw new Error(`Could not determine Chrome version from: ${output.trim()}`);
+  return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} Safari/537.36`;
+}
+
+export function cdpChromeArgs({ headed = false, port, userAgent }) {
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error("A valid CDP port is required.");
+  }
   return [
     `--user-data-dir=${profileDir()}`,
     "--profile-directory=Default",
+    `--remote-debugging-port=${port}`,
+    "--remote-allow-origins=http://127.0.0.1",
     "--no-first-run",
     "--no-default-browser-check",
-    "https://chatgpt.com/",
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    ...(headed ? [] : ["--headless=new", "--mute-audio", `--user-agent=${userAgent}`]),
+    "about:blank",
   ];
 }
 
-export function ignoredPlaywrightArgs() {
-  // The login browser writes Chrome cookies using the macOS system keychain.
-  // Playwright normally adds mock/basic keychain flags, which makes the same
-  // Chrome profile unable to decrypt those cookies on the next launch.
-  return ["--use-mock-keychain", "--password-store=basic"];
+async function reservePort() {
+  const server = net.createServer();
+  server.unref();
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  await new Promise((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+  if (!port) throw new Error("Could not reserve a local CDP port.");
+  return port;
 }
 
-export async function launchLoginBrowser() {
+async function waitForCdp(port, child, { timeoutMs = 20_000 } = {}) {
+  const endpoint = `http://127.0.0.1:${port}`;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) {
+      throw new Error(`Dedicated Chrome exited before CDP was ready (code ${child.exitCode}).`);
+    }
+    try {
+      const response = await fetch(`${endpoint}/json/version`, {
+        signal: AbortSignal.timeout(1_000),
+      });
+      if (response.ok) return endpoint;
+    } catch {
+      // Chrome is still starting.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("Timed out waiting for the dedicated Chrome CDP endpoint.");
+}
+
+async function stopChrome(browser, child) {
+  await browser?.close().catch(() => {});
+  if (!child || child.exitCode !== null) return;
+  await Promise.race([
+    once(child, "exit"),
+    new Promise((resolve) => setTimeout(resolve, 5_000)),
+  ]);
+  if (child.exitCode === null) child.kill("SIGTERM");
+}
+
+export async function launchBrowser({ headed = false } = {}) {
   ensureProfileDir();
   const executable = chromeExecutable();
   if (!fs.existsSync(executable)) {
@@ -59,42 +115,43 @@ export async function launchLoginBrowser() {
     );
   }
 
-  const child = spawn(executable, loginChromeArgs(), {
+  const port = await reservePort();
+  const userAgent = headed ? undefined : chromeUserAgent(executable);
+  const child = spawn(executable, cdpChromeArgs({ headed, port, userAgent }), {
     stdio: "ignore",
     detached: false,
   });
-
   await Promise.race([
     once(child, "spawn"),
     once(child, "error").then(([error]) => Promise.reject(error)),
   ]);
-  return child;
-}
 
-export async function closeLoginBrowser(child) {
-  if (!child || child.exitCode !== null) return;
-  child.kill("SIGTERM");
-  await Promise.race([
-    once(child, "exit"),
-    new Promise((resolve) => setTimeout(resolve, 5_000)),
-  ]);
-  if (child.exitCode === null) child.kill("SIGKILL");
-}
+  const killOnExit = () => {
+    if (child.exitCode === null) child.kill("SIGTERM");
+  };
+  process.once("exit", killOnExit);
 
-export async function launchBrowser({ headed = false } = {}) {
-  ensureProfileDir();
+  let browser;
+  try {
+    const endpoint = await waitForCdp(port, child);
+    browser = await chromium.connectOverCDP(endpoint);
+    const context = browser.contexts()[0];
+    if (!context) throw new Error("Dedicated Chrome did not expose a browser context.");
+    const pages = context.pages();
+    const page = pages[0] || (await context.newPage());
+    page.setDefaultTimeout(15_000);
 
-  const context = await chromium.launchPersistentContext(profileDir(), {
-    channel: "chrome",
-    headless: !headed,
-    ignoreDefaultArgs: ignoredPlaywrightArgs(),
-    viewport: { width: 1360, height: 900 },
-    locale: process.env.LANG?.startsWith("zh") ? "zh-CN" : "en-US",
-    args: ["--disable-background-networking"],
-  });
-
-  const pages = context.pages();
-  const page = pages[0] || (await context.newPage());
-  page.setDefaultTimeout(15_000);
-  return { context, page };
+    let closed = false;
+    const close = async () => {
+      if (closed) return;
+      closed = true;
+      process.removeListener("exit", killOnExit);
+      await stopChrome(browser, child);
+    };
+    return { browser, context, page, child, port, close };
+  } catch (error) {
+    process.removeListener("exit", killOnExit);
+    await stopChrome(browser, child);
+    throw error;
+  }
 }
