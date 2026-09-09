@@ -16,6 +16,8 @@ without moving the conversation into Codex or the OpenAI API.
 - Does not copy cookies, passwords, access tokens, or browser profile data.
 - Lists conversations currently available in the ChatGPT sidebar.
 - Opens an existing conversation or starts a new one.
+- Uses ChatGPT's in-page navigation when selecting a conversation and skips
+  navigation entirely when that conversation is already open.
 - Shows up to six recent user/assistant messages before the prompt.
 - Streams ChatGPT responses in the terminal.
 - Waits for ChatGPT's completed-response controls, so web searches and long

@@ -112,6 +112,26 @@ export async function chromeOpenUrl(url) {
 }
 
 export async function chromeOpenConversation(conversation) {
+  await activateChromeChatGPTTab();
+  const targetPath = new URL(conversation.url).pathname;
+  const encodedPath = Buffer.from(targetPath, "utf8").toString("base64");
+  const result = await executeChromeJavaScript(`
+    (() => {
+      const targetPath = new TextDecoder().decode(Uint8Array.from(atob('${encodedPath}'), c => c.charCodeAt(0)));
+      if (location.pathname === targetPath) return 'CURRENT';
+      const link = [...document.querySelectorAll('a[href^="/c/"], a[href*="chatgpt.com/c/"]')]
+        .find((candidate) => new URL(candidate.href, location.origin).pathname === targetPath);
+      if (!link) return 'FALLBACK';
+      link.click();
+      return 'CLICKED';
+    })()
+  `);
+
+  if (result === "CURRENT") return;
+  if (result === "CLICKED") {
+    await waitForChromePath(targetPath);
+    return;
+  }
   await chromeOpenUrl(conversation.url);
 }
 
@@ -158,6 +178,25 @@ async function waitForChromePage({ timeoutMs = 60_000 } = {}) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error("Timed out waiting for the ChatGPT tab to load.");
+}
+
+async function waitForChromePath(pathname, { timeoutMs = 60_000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const state = await executeChromeJavaScript(`
+      JSON.stringify({
+        path: location.pathname,
+        composer: Boolean([...document.querySelectorAll('#prompt-textarea, textarea[placeholder], [contenteditable], [role="textbox"]')]
+          .find((element) => element.getClientRects().length > 0)),
+      })
+    `).then((value) => JSON.parse(value || "{}"));
+    if (state.path === pathname && state.composer) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  throw new Error("Timed out waiting for ChatGPT to open the selected conversation.");
 }
 
 export async function chromeAssistantSnapshot() {
