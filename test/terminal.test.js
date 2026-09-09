@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { printChatHistory, printConversations } from "../src/terminal.js";
 import { sessionIsAuthenticated } from "../src/chatgpt.js";
-import { cdpChromeArgs } from "../src/browser.js";
+import { ignoredPlaywrightArgs, loginChromeArgs } from "../src/browser.js";
 import { responseIsFinished } from "../src/response.js";
 
 test("printConversations handles an empty list", () => {
@@ -43,25 +43,18 @@ test("sessionIsAuthenticated accepts authenticated session shapes", () => {
   assert.equal(sessionIsAuthenticated({ accessToken: "redacted" }), true);
 });
 
-test("dedicated Chrome exposes CDP without Playwright automation flags", () => {
-  const args = cdpChromeArgs({ headed: true, port: 19_876 }).join(" ");
-  assert.match(args, /remote-debugging-port=19876/);
-  assert.doesNotMatch(args, /enable-automation/i);
-  assert.doesNotMatch(args, /no-sandbox/i);
-  assert.doesNotMatch(args, /headless/i);
+test("manual login Chrome has no automation or debugging flags", () => {
+  const args = loginChromeArgs().join(" ");
+  assert.doesNotMatch(args, /automation/i);
+  assert.doesNotMatch(args, /remote-debugging/i);
+  assert.match(args, /chatgpt\.com/);
 });
 
-test("background Chrome disables rendering throttles", () => {
-  const args = cdpChromeArgs({
-    headed: false,
-    port: 19_876,
-    userAgent: "Mozilla/5.0 Chrome/150.0.0.0 Safari/537.36",
-  }).join(" ");
-  assert.match(args, /headless=new/);
-  assert.doesNotMatch(args, /HeadlessChrome/);
-  assert.match(args, /disable-background-timer-throttling/);
-  assert.match(args, /disable-renderer-backgrounding/);
-  assert.match(args, /disable-backgrounding-occluded-windows/);
+test("Playwright does not replace the macOS Chrome keychain", () => {
+  assert.deepEqual(ignoredPlaywrightArgs(), [
+    "--use-mock-keychain",
+    "--password-store=basic",
+  ]);
 });
 
 test("a web-search pause is not treated as a completed response", () => {
