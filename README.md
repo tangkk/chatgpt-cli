@@ -20,6 +20,9 @@ without moving the conversation into Codex or the OpenAI API.
 - Streams ChatGPT responses in the terminal.
 - Waits for ChatGPT's completed-response controls, so web searches and long
   pauses do not prematurely return to the input prompt.
+- Keeps the ChatGPT tab active inside its Chrome window while a response is
+  running, without bringing Chrome to the foreground. This avoids background
+  tab rendering throttles truncating search responses.
 - Prints external citation URLs that are otherwise represented only by link
   cards in the web UI.
 - Keeps messages in the actual ChatGPT web conversation and history.

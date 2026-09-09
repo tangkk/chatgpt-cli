@@ -32,9 +32,16 @@ function findChatGPTTabLines(body) {
   return [
     'tell application "Google Chrome"',
     "set targetTab to missing value",
+    "set targetWindow to missing value",
+    "set targetTabIndex to 0",
     "repeat with w in windows",
-    "repeat with t in tabs of w",
-    `if URL of t starts with ${appleString(CHATGPT_URL)} then set targetTab to t`,
+    "repeat with tabIndex from 1 to (count tabs of w)",
+    "set t to tab tabIndex of w",
+    `if URL of t starts with ${appleString(CHATGPT_URL)} then`,
+    "set targetTab to t",
+    "set targetWindow to w",
+    "set targetTabIndex to tabIndex",
+    "end if",
     "end repeat",
     "end repeat",
     'if targetTab is missing value then error "NO_CHATGPT_TAB"',
@@ -66,6 +73,12 @@ export async function executeChromeJavaScript(source) {
   );
 }
 
+export async function activateChromeChatGPTTab() {
+  await runAppleScript(
+    findChatGPTTabLines(["set active tab index of targetWindow to targetTabIndex"]),
+  );
+}
+
 export async function checkChromeBridge() {
   await ensureChromeChatGPTTab();
   const result = await executeChromeJavaScript(
@@ -93,6 +106,7 @@ export async function chromeListConversations({ limit = 30 } = {}) {
 }
 
 export async function chromeOpenUrl(url) {
+  await activateChromeChatGPTTab();
   await runAppleScript(findChatGPTTabLines([`set URL of targetTab to ${appleString(url)}`]));
   await waitForChromePage();
 }
@@ -202,7 +216,15 @@ export async function chromeAssistantSnapshot() {
       const linkText = missingLinks.length
         ? '\\n\\nLinks:\\n' + missingLinks.map((link) => '- ' + (link.label ? link.label + ': ' : '') + link.href).join('\\n')
         : '';
-      return { count: messages.length, text: body + linkText, stop, complete, idleComposer, writing };
+      return {
+        count: messages.length,
+        text: body + linkText,
+        stop,
+        complete,
+        idleComposer,
+        writing,
+        visible: document.visibilityState === 'visible',
+      };
     })())
   `);
   return JSON.parse(result || "{}");
@@ -287,6 +309,7 @@ export async function chromeSendMessage(
   prompt,
   { onDelta = () => {}, timeoutMs = 5 * 60_000 } = {},
 ) {
+  await activateChromeChatGPTTab();
   const before = await chromeAssistantSnapshot();
   await setChromePrompt(prompt);
   await clickChromeSend();
@@ -299,6 +322,11 @@ export async function chromeSendMessage(
 
   while (Date.now() < deadline) {
     const current = await chromeAssistantSnapshot();
+    if (!current.visible) {
+      await activateChromeChatGPTTab();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      continue;
+    }
     const isNew = current.count > before.count || current.text !== before.text;
     if (isNew && current.text) started = true;
 
@@ -320,6 +348,7 @@ export async function chromeSendMessage(
       stop: current.stop,
       idle: current.idleComposer,
       writing: current.writing,
+      visible: current.visible,
       quietForMs: Date.now() - stableSince,
     })) {
       if (lastObserved && !lastObserved.startsWith(emitted)) {

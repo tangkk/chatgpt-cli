@@ -104,3 +104,16 @@ test("an idle composer is only a long-quiet fallback", () => {
     false,
   );
 });
+
+test("a hidden ChatGPT tab never finishes a response", () => {
+  assert.equal(
+    responseIsFinished({
+      started: true,
+      complete: true,
+      stop: false,
+      visible: false,
+      quietForMs: 60_000,
+    }),
+    false,
+  );
+});

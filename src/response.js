@@ -4,9 +4,10 @@ export function responseIsFinished({
   stop,
   idle = false,
   writing = false,
+  visible = true,
   quietForMs = 0,
   fallbackMs = 30_000,
 }) {
-  if (!started || stop || writing) return false;
+  if (!started || stop || writing || !visible) return false;
   return Boolean(complete || (idle && quietForMs >= fallbackMs));
 }
