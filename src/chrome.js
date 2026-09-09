@@ -209,38 +209,53 @@ export async function chromeAssistantSnapshot() {
   return JSON.parse(result || "{}");
 }
 
-async function setChromePrompt(prompt) {
+async function setChromePrompt(prompt, { timeoutMs = 20_000 } = {}) {
   const encodedPrompt = Buffer.from(prompt, "utf8").toString("base64");
-  const result = await executeChromeJavaScript(`
-    (() => {
-      const prompt = new TextDecoder().decode(Uint8Array.from(atob('${encodedPrompt}'), c => c.charCodeAt(0)));
-      const candidates = [...document.querySelectorAll('#prompt-textarea, textarea[placeholder], [contenteditable="true"]')];
-      const visible = (element) => element.getClientRects().length > 0;
-      const composer = candidates.find((element) => element.id === 'prompt-textarea' && visible(element))
-        || candidates.find(visible);
-      if (!composer) return 'NO_COMPOSER';
-      composer.focus();
-      if (composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement) {
-        const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(composer), 'value')?.set;
-        if (setter) setter.call(composer, prompt); else composer.value = prompt;
-        composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: prompt }));
-      } else {
-        const selection = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(composer);
-        selection.removeAllRanges();
-        selection.addRange(range);
-        const inserted = document.execCommand('insertText', false, prompt);
-        if (!inserted) {
-          composer.textContent = prompt;
-          composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: prompt }));
+  const deadline = Date.now() + timeoutMs;
+  let lastResult = "NO_COMPOSER";
+
+  while (Date.now() < deadline) {
+    lastResult = await executeChromeJavaScript(`
+      (() => {
+        const prompt = new TextDecoder().decode(Uint8Array.from(atob('${encodedPrompt}'), c => c.charCodeAt(0)));
+        const candidates = [...document.querySelectorAll('#prompt-textarea, textarea[placeholder], [contenteditable], [role="textbox"]')];
+        const visible = (element) => element.getClientRects().length > 0;
+        const composer = candidates.find((element) => element.id === 'prompt-textarea' && visible(element))
+          || candidates.find((element) => visible(element) && element.getAttribute('role') === 'textbox')
+          || candidates.find(visible);
+        if (!composer) return 'NO_COMPOSER';
+        if (composer.getAttribute('aria-disabled') === 'true' || composer.getAttribute('contenteditable') === 'false') {
+          return 'NOT_READY';
         }
-      }
-      composer.dispatchEvent(new Event('change', { bubbles: true }));
-      return 'OK';
-    })()
-  `);
-  if (result !== "OK") throw new Error("Could not find the ChatGPT message composer.");
+        composer.focus();
+        if (composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement) {
+          const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(composer), 'value')?.set;
+          if (setter) setter.call(composer, prompt); else composer.value = prompt;
+          composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: prompt }));
+        } else {
+          const selection = window.getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(composer);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          const inserted = document.execCommand('insertText', false, prompt);
+          if (!inserted) {
+            composer.textContent = prompt;
+            composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: prompt }));
+          }
+        }
+        composer.dispatchEvent(new Event('change', { bubbles: true }));
+        return 'OK';
+      })()
+    `);
+    if (lastResult === "OK") return;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  const detail = lastResult === "NOT_READY"
+    ? "The ChatGPT message composer stayed disabled."
+    : "The ChatGPT message composer did not appear.";
+  throw new Error(`${detail} Wait for the conversation to finish loading and try again.`);
 }
 
 async function clickChromeSend() {
