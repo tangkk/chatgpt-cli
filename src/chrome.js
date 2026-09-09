@@ -129,7 +129,14 @@ export async function chromeListConversations(
 
 export async function chromeOpenUrl(url) {
   await activateChromeChatGPTTab();
-  await runAppleScript(findChatGPTTabLines([`set URL of targetTab to ${appleString(url)}`]));
+  const encodedUrl = Buffer.from(url, "utf8").toString("base64");
+  await executeChromeJavaScript(`
+    (() => {
+      const url = new TextDecoder().decode(Uint8Array.from(atob('${encodedUrl}'), c => c.charCodeAt(0)));
+      location.assign(url);
+      return 'NAVIGATING';
+    })()
+  `);
   await waitForChromePage();
 }
 
@@ -158,6 +165,32 @@ export async function chromeOpenConversation(conversation) {
 }
 
 export async function chromeOpenNewConversation() {
+  await activateChromeChatGPTTab();
+  const result = await executeChromeJavaScript(`
+    (() => {
+      if (location.pathname === '/') return 'CURRENT';
+      const selectors = [
+        'a[data-testid="create-new-chat-button"]',
+        'button[data-testid="create-new-chat-button"]',
+        'a[aria-label*="New chat" i]',
+        'button[aria-label*="New chat" i]',
+        'a[aria-label*="新建对话"]',
+        'button[aria-label*="新建对话"]',
+        'a[href="/"]',
+      ].join(',');
+      const control = [...document.querySelectorAll(selectors)]
+        .find((element) => element.getClientRects().length > 0);
+      if (!control) return 'FALLBACK';
+      control.click();
+      return 'CLICKED';
+    })()
+  `);
+
+  if (result === "CURRENT") return;
+  if (result === "CLICKED") {
+    await waitForChromePath("/");
+    return;
+  }
   await chromeOpenUrl(CHATGPT_URL);
 }
 

@@ -18,6 +18,8 @@ without moving the conversation into Codex or the OpenAI API.
 - Opens an existing conversation or starts a new one.
 - Uses ChatGPT's in-page navigation when selecting a conversation and skips
   navigation entirely when that conversation is already open.
+- Starts new conversations through ChatGPT's in-page control, avoiding a
+  foreground-stealing AppleScript URL navigation.
 - Shows up to six recent user/assistant messages before the prompt.
 - Streams ChatGPT responses in the terminal.
 - Waits for ChatGPT's completed-response controls, so web searches and long
