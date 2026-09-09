@@ -127,6 +127,71 @@ Commands available during a chat:
 /quit                       Exit
 ```
 
+## Optional ScreenVeil helper
+
+[`screenveil.sh`](./screenveil.sh) provides a password-protected visual cover
+for the active macOS desktop without invoking the macOS lock screen or putting
+the display to sleep. Its nearly opaque AppKit windows are intentionally marked
+as non-opaque so Chrome can continue rendering ChatGPT responses underneath.
+
+Compile-check it without opening the veil:
+
+```bash
+./screenveil.sh --check
+```
+
+Start it:
+
+```bash
+./screenveil.sh
+```
+
+### Use ScreenVeil with chatgpt-web over SSH
+
+On the Mac, while the desktop is unlocked:
+
+1. Open regular Chrome, sign in to ChatGPT, and leave a ChatGPT tab open.
+2. Enable Chrome's **View → Developer → Allow JavaScript from Apple Events**.
+3. Start ScreenVeil through `caffeinate` so macOS does not independently put
+   the display or computer to sleep:
+
+   ```bash
+   cd chatgpt-cli
+   caffeinate -di ./screenveil.sh
+   ```
+
+ScreenVeil now covers the physical desktop, while its non-opaque window
+configuration allows Chrome to continue rendering underneath. From another
+machine, connect over SSH and start the normal existing-Chrome client:
+
+```bash
+ssh your-mac
+chatgpt-web
+```
+
+Do not use `chatgpt-web login`, a separate browser profile, or a headless mode
+for this workflow. Enter the ScreenVeil password locally on the Mac when you
+want to reveal the desktop; exiting ScreenVeil also ends its `caffeinate`
+process.
+
+For this arrangement to keep working:
+
+- Do not also invoke the native macOS lock screen.
+- Do not run `pmset displaysleepnow` or allow automatic display/system sleep.
+- Keep the Mac awake and, for a laptop, do not close the lid unless it is in a
+  supported awake clamshell configuration.
+- Keep Chrome running. `chatgpt-web` may select the ChatGPT tab inside its
+  Chrome window, but ScreenVeil remains visually above it.
+
+On first use, enter and confirm a ScreenVeil password. The password is passed
+directly to the macOS Keychain at runtime. It is never written to the script, a
+configuration file, or this repository.
+
+> [!CAUTION]
+> ScreenVeil is a visual privacy layer, not a replacement for the native macOS
+> lock screen. A process running as the same user can terminate it, and it does
+> not establish a separate macOS security session.
+
 ## Security model
 
 - No credentials, cookies, browser storage, or conversation transcripts are
@@ -137,6 +202,8 @@ Commands available during a chat:
   terminal output.
 - Prompts and responses still pass through ChatGPT and remain subject to your
   ChatGPT account, workspace, history, and data-control settings.
+- ScreenVeil stores only its generic Keychain service/account identifiers in
+  source control; the password value remains in the user's macOS Keychain.
 - Keep `.env`, `*.local`, and browser-profile directories out of version
   control; the included `.gitignore` excludes them.
 
