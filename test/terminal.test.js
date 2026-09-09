@@ -3,6 +3,7 @@ import test from "node:test";
 import { printChatHistory, printConversations } from "../src/terminal.js";
 import { sessionIsAuthenticated } from "../src/chatgpt.js";
 import { ignoredPlaywrightArgs, loginChromeArgs } from "../src/browser.js";
+import { responseIsFinished } from "../src/response.js";
 
 test("printConversations handles an empty list", () => {
   const original = console.log;
@@ -54,4 +55,22 @@ test("Playwright does not replace the macOS Chrome keychain", () => {
     "--use-mock-keychain",
     "--password-store=basic",
   ]);
+});
+
+test("a web-search pause is not treated as a completed response", () => {
+  assert.equal(
+    responseIsFinished({ started: true, complete: false, stop: false }),
+    false,
+  );
+});
+
+test("a response finishes only after ChatGPT exposes completion controls", () => {
+  assert.equal(
+    responseIsFinished({ started: true, complete: true, stop: false }),
+    true,
+  );
+  assert.equal(
+    responseIsFinished({ started: true, complete: true, stop: true }),
+    false,
+  );
 });

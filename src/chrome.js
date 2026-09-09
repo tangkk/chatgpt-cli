@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { responseIsFinished } from "./response.js";
 
 const execFileAsync = promisify(execFile);
 const CHATGPT_URL = "https://chatgpt.com/";
@@ -145,13 +146,50 @@ async function waitForChromePage({ timeoutMs = 60_000 } = {}) {
   throw new Error("Timed out waiting for the ChatGPT tab to load.");
 }
 
-async function chromeAssistantSnapshot() {
+export async function chromeAssistantSnapshot() {
   const result = await executeChromeJavaScript(`
     JSON.stringify((() => {
-      const messages = [...document.querySelectorAll('[data-message-author-role="assistant"], article[data-turn="assistant"]')];
+      const primary = [...document.querySelectorAll('[data-message-author-role="assistant"]')];
+      const messages = primary.length
+        ? primary
+        : [...document.querySelectorAll('article[data-turn="assistant"]')];
       const last = messages.at(-1);
-      const stop = document.querySelector('button[data-testid="stop-button"], button[aria-label*="Stop"], button[aria-label*="停止"]');
-      return { count: messages.length, text: last?.innerText || '', stop: Boolean(stop) };
+      const visible = (element) => Boolean(element && element.getClientRects().length > 0);
+      const stop = [...document.querySelectorAll([
+        'button[data-testid="stop-button"]',
+        'button[aria-label*="Stop" i]',
+        'button[aria-label*="停止"]',
+      ].join(','))].some(visible);
+
+      let complete = false;
+      for (let node = last; node && node !== document.body; node = node.parentElement) {
+        const assistantCount = node.querySelectorAll('[data-message-author-role="assistant"]').length;
+        if (assistantCount > 1) break;
+        const copy = node.querySelector('button[data-testid="copy-turn-action-button"]');
+        if (copy) {
+          complete = true;
+          break;
+        }
+      }
+
+      const body = (last?.innerText || '').trim();
+      const links = last ? [...last.querySelectorAll('a[href]')].map((anchor) => ({
+        label: (anchor.innerText || anchor.getAttribute('aria-label') || anchor.title || '').replace(/\\s+/g, ' ').trim(),
+        href: anchor.href,
+      })).filter(({ href }) => {
+        try {
+          const url = new URL(href);
+          return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname !== 'chatgpt.com';
+        } catch {
+          return false;
+        }
+      }) : [];
+      const uniqueLinks = [...new Map(links.map((link) => [link.href, link])).values()];
+      const missingLinks = uniqueLinks.filter((link) => !body.includes(link.href));
+      const linkText = missingLinks.length
+        ? '\\n\\nLinks:\\n' + missingLinks.map((link) => '- ' + (link.label ? link.label + ': ' : '') + link.href).join('\\n')
+        : '';
+      return { count: messages.length, text: body + linkText, stop, complete };
     })())
   `);
   return JSON.parse(result || "{}");
@@ -228,19 +266,15 @@ export async function chromeSendMessage(
   const deadline = Date.now() + timeoutMs;
   let emitted = "";
   let lastObserved = "";
-  let stableSince = Date.now();
   let started = false;
-  let sawStop = false;
 
   while (Date.now() < deadline) {
     const current = await chromeAssistantSnapshot();
     const isNew = current.count > before.count || current.text !== before.text;
     if (isNew && current.text) started = true;
-    if (current.stop) sawStop = true;
 
     if (started && current.text !== lastObserved) {
       lastObserved = current.text;
-      stableSince = Date.now();
     }
     if (started && current.text.startsWith(emitted)) {
       const delta = current.text.slice(emitted.length);
@@ -250,8 +284,10 @@ export async function chromeSendMessage(
       }
     }
 
-    if (started && !current.stop && (sawStop || Date.now() - stableSince > 3_000)) {
-      if (lastObserved && !lastObserved.startsWith(emitted)) onDelta(`\n${lastObserved}`);
+    if (responseIsFinished({ started, complete: current.complete, stop: current.stop })) {
+      if (lastObserved && !lastObserved.startsWith(emitted)) {
+        onDelta(`${emitted ? "\n" : ""}${lastObserved}`);
+      }
       return lastObserved;
     }
     await new Promise((resolve) => setTimeout(resolve, 120));

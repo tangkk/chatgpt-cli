@@ -1,3 +1,5 @@
+import { responseIsFinished } from "./response.js";
+
 const CHATGPT_URL = "https://chatgpt.com/";
 
 const SELECTORS = {
@@ -6,10 +8,6 @@ const SELECTORS = {
     "textarea[placeholder]",
     '[contenteditable="true"][data-virtualkeyboard="true"]',
   ],
-  assistant: [
-    '[data-message-author-role="assistant"]',
-    'article[data-turn="assistant"]',
-  ].join(","),
   conversationLink: 'a[href^="/c/"], a[href*="chatgpt.com/c/"]',
   stopButton: [
     'button[data-testid="stop-button"]',
@@ -159,10 +157,44 @@ export async function openNewConversation(page) {
 }
 
 async function assistantSnapshot(page) {
-  const messages = page.locator(SELECTORS.assistant);
-  const count = await messages.count();
-  const text = count ? await messages.nth(count - 1).innerText().catch(() => "") : "";
-  return { count, text };
+  return page.evaluate(() => {
+    const primary = [...document.querySelectorAll('[data-message-author-role="assistant"]')];
+    const messages = primary.length
+      ? primary
+      : [...document.querySelectorAll('article[data-turn="assistant"]')];
+    const last = messages.at(-1);
+
+    let complete = false;
+    for (let node = last; node && node !== document.body; node = node.parentElement) {
+      const assistantCount = node.querySelectorAll('[data-message-author-role="assistant"]').length;
+      if (assistantCount > 1) break;
+      const copy = node.querySelector('button[data-testid="copy-turn-action-button"]');
+      if (copy) {
+        complete = true;
+        break;
+      }
+    }
+
+    const body = (last?.innerText || "").trim();
+    const links = last ? [...last.querySelectorAll("a[href]")].map((anchor) => ({
+      label: (anchor.innerText || anchor.getAttribute("aria-label") || anchor.title || "")
+        .replace(/\s+/g, " ").trim(),
+      href: anchor.href,
+    })).filter(({ href }) => {
+      try {
+        const url = new URL(href);
+        return (url.protocol === "http:" || url.protocol === "https:") && url.hostname !== "chatgpt.com";
+      } catch {
+        return false;
+      }
+    }) : [];
+    const uniqueLinks = [...new Map(links.map((link) => [link.href, link])).values()];
+    const missingLinks = uniqueLinks.filter((link) => !body.includes(link.href));
+    const linkText = missingLinks.length
+      ? `\n\nLinks:\n${missingLinks.map((link) => `- ${link.label ? `${link.label}: ` : ""}${link.href}`).join("\n")}`
+      : "";
+    return { count: messages.length, text: body + linkText, complete };
+  });
 }
 
 async function writePrompt(page, prompt) {
@@ -188,8 +220,6 @@ export async function sendMessage(
   const deadline = Date.now() + timeoutMs;
   let emitted = "";
   let started = false;
-  let sawStopButton = false;
-  let stableSince = Date.now();
   let lastObserved = "";
 
   while (Date.now() < deadline) {
@@ -198,7 +228,6 @@ export async function sendMessage(
     if (isNew && current.text) started = true;
 
     if (started && current.text !== lastObserved) {
-      stableSince = Date.now();
       lastObserved = current.text;
     }
 
@@ -211,12 +240,9 @@ export async function sendMessage(
     }
 
     const stopVisible = await page.locator(SELECTORS.stopButton).first().isVisible().catch(() => false);
-    if (stopVisible) sawStopButton = true;
-
-    const stableFor = Date.now() - stableSince;
-    if (started && !stopVisible && (sawStopButton || stableFor > 3_000)) {
+    if (responseIsFinished({ started, complete: current.complete, stop: stopVisible })) {
       if (lastObserved && !lastObserved.startsWith(emitted)) {
-        onDelta(`\n${lastObserved}`);
+        onDelta(`${emitted ? "\n" : ""}${lastObserved}`);
         emitted = lastObserved;
       }
       return emitted;

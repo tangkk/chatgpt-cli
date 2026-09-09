@@ -18,6 +18,10 @@ without moving the conversation into Codex or the OpenAI API.
 - Opens an existing conversation or starts a new one.
 - Shows up to six recent user/assistant messages before the prompt.
 - Streams ChatGPT responses in the terminal.
+- Waits for ChatGPT's completed-response controls, so web searches and long
+  pauses do not prematurely return to the input prompt.
+- Prints external citation URLs that are otherwise represented only by link
+  cards in the web UI.
 - Keeps messages in the actual ChatGPT web conversation and history.
 
 ## Requirements
