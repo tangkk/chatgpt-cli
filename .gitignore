@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+output/
+npm-debug.log*
+.env
+.env.*
+!.env.example
+*.local
+chrome-profile/
