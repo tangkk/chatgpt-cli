@@ -36,7 +36,8 @@ without moving the conversation into Codex or the OpenAI API.
 - macOS
 - Node.js 20 or newer
 - Google Chrome
-- A signed-in ChatGPT tab
+- A regular Chrome profile signed in to ChatGPT
+- An active, unlocked macOS desktop session
 
 The existing-Chrome bridge uses Chrome's built-in Apple Events support and is
 currently macOS-only.
@@ -58,7 +59,6 @@ Machine-specific settings should live in your shell configuration, not in the
 repository:
 
 ```bash
-export CHATGPT_WEB_CLI_HOME="$HOME/Library/Application Support/chatgpt-web-cli"
 export CHATGPT_WEB_CLI_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 ```
 
@@ -68,8 +68,8 @@ After editing `~/.bashrc`, reload it:
 source ~/.bashrc
 ```
 
-`CHATGPT_WEB_CLI_HOME` is used only by the optional isolated-profile fallback.
-The recommended existing-Chrome mode does not copy your Chrome profile.
+The client does not copy your Chrome profile. It controls the signed-in
+ChatGPT tab already open in regular Chrome.
 
 ## Chrome setup
 
@@ -90,11 +90,11 @@ macOS may ask whether Terminal can control Google Chrome. This permission is
 required for opening a ChatGPT tab, reading its visible conversation UI, and
 sending messages.
 
-You can also run `chatgpt-web` over SSH. The Mac must still have an active,
-unlocked desktop login with Chrome running. A ChatGPT tab may remain hidden in
-the desktop session when controlled from SSH; the client waits for an explicit
-completed-response control and a short period of stable text before printing
-the reply.
+You can run `chatgpt-web` from an SSH terminal, but the Mac must keep an active,
+unlocked desktop login with Chrome running. Screen lock and some screen savers
+pause the ChatGPT page, so replies may not reach the terminal until the Mac is
+unlocked. This is a limitation of controlling the real Chrome UI, not an SSH
+connection problem.
 
 ## Usage
 
@@ -127,25 +127,6 @@ Commands available during a chat:
 /quit                       Exit
 ```
 
-## Optional isolated-profile fallback
-
-The project also contains an experimental Playwright-based mode with a separate
-Chrome profile:
-
-```bash
-chatgpt-web login
-chatgpt-web status
-chatgpt-web list
-chatgpt-web chat [conversation-id]
-chatgpt-web new
-```
-
-Some identity providers reject automated browser login. Existing-Chrome mode is
-therefore recommended.
-
-The isolated profile is stored under `CHATGPT_WEB_CLI_HOME` and must never be
-committed, shared, or copied to an untrusted machine. Treat it like a password.
-
 ## Security model
 
 - No credentials, cookies, browser storage, or conversation transcripts are
@@ -171,6 +152,8 @@ npm test
 
 - ChatGPT UI changes may break selectors.
 - Only chats loaded in the sidebar can be listed.
+- SSH operation is not reliable while macOS is locked or a screen saver has
+  suspended Chrome's page rendering. Unlocking the Mac resumes the page.
 - Text chat is supported; attachments, voice, model selection, canvas, and
   custom GPT controls are not implemented.
 - The existing-Chrome integration currently requires macOS and Google Chrome.
