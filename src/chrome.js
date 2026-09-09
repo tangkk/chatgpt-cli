@@ -413,13 +413,13 @@ export async function chromeSendMessage(
   let lastObserved = "";
   let started = false;
   let stableSince = Date.now();
+  let lastActivationAttempt = 0;
 
   while (Date.now() < deadline) {
     const current = await chromeAssistantSnapshot();
-    if (!current.visible) {
-      await activateChromeChatGPTTab();
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      continue;
+    if (!current.visible && Date.now() - lastActivationAttempt >= 2_000) {
+      lastActivationAttempt = Date.now();
+      await activateChromeChatGPTTab().catch(() => {});
     }
     const isNew = current.count > before.count || current.text !== before.text;
     if (isNew && current.text) started = true;

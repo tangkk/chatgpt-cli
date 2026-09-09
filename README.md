@@ -90,6 +90,12 @@ macOS may ask whether Terminal can control Google Chrome. This permission is
 required for opening a ChatGPT tab, reading its visible conversation UI, and
 sending messages.
 
+You can also run `chatgpt-web` over SSH. The Mac must still have an active,
+unlocked desktop login with Chrome running. A ChatGPT tab may remain hidden in
+the desktop session when controlled from SSH; the client waits for an explicit
+completed-response control and a short period of stable text before printing
+the reply.
+
 ## Usage
 
 Start the interactive client:
