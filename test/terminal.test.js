@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { printChatHistory, printConversations } from "../src/terminal.js";
 import { sessionIsAuthenticated } from "../src/chatgpt.js";
-import { cdpChromeArgs } from "../src/browser.js";
+import { cdpChromeArgs, ioregShowsLocked } from "../src/browser.js";
 import { responseIsFinished } from "../src/response.js";
 
 test("printConversations handles an empty list", () => {
@@ -62,6 +62,11 @@ test("background Chrome disables rendering throttles", () => {
   assert.match(args, /disable-background-timer-throttling/);
   assert.match(args, /disable-renderer-backgrounding/);
   assert.match(args, /disable-backgrounding-occluded-windows/);
+});
+
+test("macOS lock state is recognized from ioreg output", () => {
+  assert.equal(ioregShowsLocked('"CGSSessionScreenIsLocked" = Yes'), true);
+  assert.equal(ioregShowsLocked('"CGSSessionOnConsoleKey" = Yes'), false);
 });
 
 test("a web-search pause is not treated as a completed response", () => {

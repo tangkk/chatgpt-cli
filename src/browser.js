@@ -41,6 +41,22 @@ export function chromeUserAgent(executable = chromeExecutable()) {
   return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} Safari/537.36`;
 }
 
+export function ioregShowsLocked(output) {
+  return /["']?CGSSessionScreenIsLocked["']?\s*=\s*(?:Yes|true|1)/i.test(output);
+}
+
+export function screenIsLocked() {
+  if (process.platform !== "darwin") return false;
+  try {
+    const output = execFileSync("/usr/sbin/ioreg", ["-n", "Root", "-d1"], {
+      encoding: "utf8",
+    });
+    return ioregShowsLocked(output);
+  } catch {
+    return false;
+  }
+}
+
 export function cdpChromeArgs({ headed = false, port, userAgent }) {
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error("A valid CDP port is required.");
@@ -107,6 +123,11 @@ async function stopChrome(browser, child) {
 }
 
 export async function launchBrowser({ headed = false } = {}) {
+  if (!headed && screenIsLocked()) {
+    throw new Error(
+      "macOS is locked, so a new Chrome process cannot safely read its Keychain-protected ChatGPT cookies. Start `chatgpt-web background` inside tmux while unlocked, then use `tmux attach -t chatgpt-background` after locking.",
+    );
+  }
   ensureProfileDir();
   const executable = chromeExecutable();
   if (!fs.existsSync(executable)) {

@@ -141,14 +141,22 @@ chatgpt-web background-login
 ```
 
 The dedicated window closes automatically after the ChatGPT session is
-detected. Afterwards, including over SSH with the desktop locked, use:
+detected. While the desktop is still unlocked, start the background client in
+tmux and detach it:
 
 ```bash
-chatgpt-web background-status
-chatgpt-web background-list
-chatgpt-web background [conversation-id]
-chatgpt-web background-new
+tmux new -s chatgpt-background
+chatgpt-web background
+# Press Ctrl-B, then D
 ```
+
+After locking, reconnect over SSH and resume that same process with
+`tmux attach -t chatgpt-background`. Do not start a new background Chrome after
+macOS is already locked: Chrome may be unable to decrypt its keychain-backed
+cookies. The client detects this state and refuses the unsafe launch.
+
+For unlocked-session diagnostics, `background-status`, `background-list`, and
+`background-new` remain available.
 
 `background` launches Chrome with `--headless=new` and disables Chrome's
 background rendering throttles. The CDP endpoint listens only on
