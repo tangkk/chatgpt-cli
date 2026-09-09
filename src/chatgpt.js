@@ -187,7 +187,6 @@ async function assistantSnapshot(page) {
     ].join(","))].some((element) => element.getClientRects().length > 0));
     const turn = last?.closest('[data-turn="assistant"], [data-testid^="conversation-turn-"]');
     const writing = Boolean(turn?.querySelector("[data-writing-block]"));
-    complete = complete || (idleComposer && !writing);
 
     const body = (last?.innerText || "").trim();
     const links = last ? [...last.querySelectorAll("a[href]")].map((anchor) => ({
@@ -235,6 +234,7 @@ export async function sendMessage(
   let emitted = "";
   let started = false;
   let lastObserved = "";
+  let stableSince = Date.now();
 
   while (Date.now() < deadline) {
     const current = await assistantSnapshot(page);
@@ -243,6 +243,7 @@ export async function sendMessage(
 
     if (started && current.text !== lastObserved) {
       lastObserved = current.text;
+      stableSince = Date.now();
     }
 
     if (started && current.text.startsWith(emitted)) {
@@ -254,7 +255,14 @@ export async function sendMessage(
     }
 
     const stopVisible = await page.locator(SELECTORS.stopButton).first().isVisible().catch(() => false);
-    if (responseIsFinished({ started, complete: current.complete, stop: stopVisible })) {
+    if (responseIsFinished({
+      started,
+      complete: current.complete,
+      stop: stopVisible,
+      idle: current.idleComposer,
+      writing: current.writing,
+      quietForMs: Date.now() - stableSince,
+    })) {
       if (lastObserved && !lastObserved.startsWith(emitted)) {
         onDelta(`${emitted ? "\n" : ""}${lastObserved}`);
         emitted = lastObserved;

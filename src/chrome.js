@@ -184,7 +184,6 @@ export async function chromeAssistantSnapshot() {
       ].join(','))].some(visible));
       const turn = last?.closest('[data-turn="assistant"], [data-testid^="conversation-turn-"]');
       const writing = Boolean(turn?.querySelector('[data-writing-block]'));
-      complete = complete || (idleComposer && !writing);
 
       const body = (last?.innerText || '').trim();
       const links = last ? [...last.querySelectorAll('a[href]')].map((anchor) => ({
@@ -296,6 +295,7 @@ export async function chromeSendMessage(
   let emitted = "";
   let lastObserved = "";
   let started = false;
+  let stableSince = Date.now();
 
   while (Date.now() < deadline) {
     const current = await chromeAssistantSnapshot();
@@ -304,6 +304,7 @@ export async function chromeSendMessage(
 
     if (started && current.text !== lastObserved) {
       lastObserved = current.text;
+      stableSince = Date.now();
     }
     if (started && current.text.startsWith(emitted)) {
       const delta = current.text.slice(emitted.length);
@@ -313,7 +314,14 @@ export async function chromeSendMessage(
       }
     }
 
-    if (responseIsFinished({ started, complete: current.complete, stop: current.stop })) {
+    if (responseIsFinished({
+      started,
+      complete: current.complete,
+      stop: current.stop,
+      idle: current.idleComposer,
+      writing: current.writing,
+      quietForMs: Date.now() - stableSince,
+    })) {
       if (lastObserved && !lastObserved.startsWith(emitted)) {
         onDelta(`${emitted ? "\n" : ""}${lastObserved}`);
       }

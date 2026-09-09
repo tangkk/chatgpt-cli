@@ -59,7 +59,13 @@ test("Playwright does not replace the macOS Chrome keychain", () => {
 
 test("a web-search pause is not treated as a completed response", () => {
   assert.equal(
-    responseIsFinished({ started: true, complete: false, stop: false }),
+    responseIsFinished({
+      started: true,
+      complete: false,
+      stop: false,
+      idle: true,
+      quietForMs: 10_000,
+    }),
     false,
   );
 });
@@ -71,6 +77,30 @@ test("a response finishes only after ChatGPT exposes completion controls", () =>
   );
   assert.equal(
     responseIsFinished({ started: true, complete: true, stop: true }),
+    false,
+  );
+});
+
+test("an idle composer is only a long-quiet fallback", () => {
+  assert.equal(
+    responseIsFinished({
+      started: true,
+      complete: false,
+      stop: false,
+      idle: true,
+      quietForMs: 30_000,
+    }),
+    true,
+  );
+  assert.equal(
+    responseIsFinished({
+      started: true,
+      complete: false,
+      stop: false,
+      idle: true,
+      writing: true,
+      quietForMs: 60_000,
+    }),
     false,
   );
 });
