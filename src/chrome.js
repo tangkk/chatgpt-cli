@@ -63,6 +63,7 @@ export async function ensureChromeChatGPTTab() {
     `if targetTab is missing value then set targetTab to make new tab at end of tabs of front window with properties {URL:${appleString(CHATGPT_URL)}}`,
     "end tell",
   ]);
+  await waitForChromePage();
 }
 
 export async function executeChromeJavaScript(source) {
@@ -87,22 +88,43 @@ export async function checkChromeBridge() {
   return JSON.parse(result || "{}");
 }
 
-export async function chromeListConversations({ limit = 30 } = {}) {
-  const result = await executeChromeJavaScript(`
-    JSON.stringify((() => {
-      const found = new Map();
-      for (const link of document.querySelectorAll('a[href^="/c/"], a[href*="chatgpt.com/c/"]')) {
-        const match = link.href.match(/\\/c\\/([^/?#]+)/);
-        if (!match || found.has(match[1])) continue;
-        const title = (link.getAttribute('aria-label') || link.getAttribute('title') || link.textContent || 'Untitled chat')
-          .replace(/\\s+/g, ' ').trim();
-        found.set(match[1], { id: match[1], title, url: 'https://chatgpt.com/c/' + match[1] });
-        if (found.size >= ${Number(limit)}) break;
-      }
-      return [...found.values()];
-    })())
-  `);
-  return JSON.parse(result || "[]");
+export async function chromeListConversations(
+  { limit = 30, timeoutMs = 12_000 } = {},
+) {
+  const deadline = Date.now() + timeoutMs;
+  let conversations = [];
+
+  while (Date.now() < deadline) {
+    const result = await executeChromeJavaScript(`
+      JSON.stringify((() => {
+        const conversationSelector = 'a[href^="/c/"], a[href*="chatgpt.com/c/"]';
+        const found = new Map();
+        for (const link of document.querySelectorAll(conversationSelector)) {
+          const match = link.href.match(/\\/c\\/([^/?#]+)/);
+          if (!match || found.has(match[1])) continue;
+          const title = (link.getAttribute('aria-label') || link.getAttribute('title') || link.textContent || 'Untitled chat')
+            .replace(/\\s+/g, ' ').trim();
+          found.set(match[1], { id: match[1], title, url: 'https://chatgpt.com/c/' + match[1] });
+          if (found.size >= ${Number(limit)}) break;
+        }
+
+        if (!found.size) {
+          const openSidebar = [...document.querySelectorAll([
+            'button[data-testid="open-sidebar-button"]',
+            'button[aria-label*="Open sidebar" i]',
+            'button[aria-label*="打开侧边栏"]',
+          ].join(','))].find((button) => button.getClientRects().length > 0);
+          if (openSidebar) openSidebar.click();
+        }
+        return [...found.values()];
+      })())
+    `);
+    conversations = JSON.parse(result || "[]");
+    if (conversations.length) return conversations;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+
+  return conversations;
 }
 
 export async function chromeOpenUrl(url) {
