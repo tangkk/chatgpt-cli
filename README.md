@@ -115,6 +115,7 @@ Commands available during a chat:
 
 ```text
 /new                        Start a new ChatGPT conversation
+/back                       Return to the conversation list
 /quit                       Exit
 ```
 

@@ -55,6 +55,7 @@ Options:
 
 In-chat commands:
   /new                             Start a new conversation
+  /back                            Return to the conversation list
   /quit                            Exit
 `);
 }
@@ -159,11 +160,12 @@ async function pickChromeConversation(terminal, limit) {
 }
 
 async function chromeChatLoop(terminal) {
-  console.log("\nConnected to ChatGPT in your existing Chrome. Type /new or /quit.\n");
+  console.log("\nConnected to ChatGPT in your existing Chrome. Type /back, /new, or /quit.\n");
   while (true) {
     const prompt = (await terminal.question("You > ")).trim();
     if (!prompt) continue;
-    if (prompt === "/quit") return;
+    if (prompt === "/quit") return "quit";
+    if (prompt === "/back") return "menu";
     if (prompt === "/new") {
       await chromeOpenNewConversation();
       console.log("Started a new ChatGPT conversation.\n");
@@ -183,14 +185,18 @@ async function chromeChat({ limit }) {
   try {
     await ensureChromeChatGPTTab();
     await checkChromeBridge();
-    const choice = await pickChromeConversation(terminal, limit);
-    if (choice.action === "quit") return;
-    if (choice.action === "new") await chromeOpenNewConversation();
-    if (choice.action === "open") {
-      await chromeOpenConversation(choice.conversation);
-      printChatHistory(await chromeRecentMessages());
+    while (true) {
+      const choice = await pickChromeConversation(terminal, limit);
+      if (choice.action === "quit") return;
+      if (choice.action === "new") await chromeOpenNewConversation();
+      if (choice.action === "open") {
+        await chromeOpenConversation(choice.conversation);
+        printChatHistory(await chromeRecentMessages());
+      }
+      const action = await chromeChatLoop(terminal);
+      if (action === "quit") return;
+      console.log("\nBack to conversations.\n");
     }
-    await chromeChatLoop(terminal);
   } finally {
     terminal.close();
   }
@@ -207,11 +213,12 @@ async function pickConversation(page, terminal, limit) {
 }
 
 async function chatLoop(page, terminal) {
-  console.log("\nConnected to ChatGPT. Type /new for a new chat or /quit to exit.\n");
+  console.log("\nConnected to ChatGPT. Type /back, /new, or /quit.\n");
   while (true) {
     const prompt = (await terminal.question("You > ")).trim();
     if (!prompt) continue;
-    if (prompt === "/quit") return;
+    if (prompt === "/quit") return "quit";
+    if (prompt === "/back") return "menu";
     if (prompt === "/new") {
       await openNewConversation(page);
       console.log("Started a new ChatGPT conversation.\n");
@@ -230,20 +237,29 @@ async function chat({ id, headed, limit, forceNew = false }) {
   const terminal = createTerminal();
   try {
     await withBrowser({ headed }, async (page) => {
-      if (forceNew) {
-        await openNewConversation(page);
-      } else if (id) {
-        await openConversation(page, {
-          id,
-          url: `https://chatgpt.com/c/${encodeURIComponent(id)}`,
-        });
-      } else {
-        const choice = await pickConversation(page, terminal, limit);
-        if (choice.action === "quit") return;
-        if (choice.action === "new") await openNewConversation(page);
-        if (choice.action === "open") await openConversation(page, choice.conversation);
+      let initialId = id;
+      let startNew = forceNew;
+      while (true) {
+        if (startNew) {
+          await openNewConversation(page);
+        } else if (initialId) {
+          await openConversation(page, {
+            id: initialId,
+            url: `https://chatgpt.com/c/${encodeURIComponent(initialId)}`,
+          });
+        } else {
+          const choice = await pickConversation(page, terminal, limit);
+          if (choice.action === "quit") return;
+          if (choice.action === "new") await openNewConversation(page);
+          if (choice.action === "open") await openConversation(page, choice.conversation);
+        }
+        initialId = undefined;
+        startNew = false;
+
+        const action = await chatLoop(page, terminal);
+        if (action === "quit") return;
+        console.log("\nBack to conversations.\n");
       }
-      await chatLoop(page, terminal);
     });
   } finally {
     terminal.close();
