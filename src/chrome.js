@@ -157,6 +157,7 @@ export async function chromeAssistantSnapshot() {
       const visible = (element) => Boolean(element && element.getClientRects().length > 0);
       const stop = [...document.querySelectorAll([
         'button[data-testid="stop-button"]',
+        'button[data-testid="composer-submit-button"]',
         'button[aria-label*="Stop" i]',
         'button[aria-label*="停止"]',
       ].join(','))].some(visible);
@@ -171,6 +172,19 @@ export async function chromeAssistantSnapshot() {
           break;
         }
       }
+
+      const composer = [...document.querySelectorAll('#prompt-textarea, textarea[placeholder], [contenteditable="true"]')]
+        .find(visible);
+      const composerScope = composer?.closest('form') || composer?.parentElement?.parentElement?.parentElement;
+      const idleComposer = Boolean(composerScope && [...composerScope.querySelectorAll([
+        'button[aria-label*="Start Voice" i]',
+        'button[aria-label*="Start dictation" i]',
+        'button[aria-label*="开始语音"]',
+        'button[aria-label*="开始听写"]',
+      ].join(','))].some(visible));
+      const turn = last?.closest('[data-turn="assistant"], [data-testid^="conversation-turn-"]');
+      const writing = Boolean(turn?.querySelector('[data-writing-block]'));
+      complete = complete || (idleComposer && !writing);
 
       const body = (last?.innerText || '').trim();
       const links = last ? [...last.querySelectorAll('a[href]')].map((anchor) => ({
@@ -189,7 +203,7 @@ export async function chromeAssistantSnapshot() {
       const linkText = missingLinks.length
         ? '\\n\\nLinks:\\n' + missingLinks.map((link) => '- ' + (link.label ? link.label + ': ' : '') + link.href).join('\\n')
         : '';
-      return { count: messages.length, text: body + linkText, stop, complete };
+      return { count: messages.length, text: body + linkText, stop, complete, idleComposer, writing };
     })())
   `);
   return JSON.parse(result || "{}");

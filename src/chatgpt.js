@@ -11,6 +11,7 @@ const SELECTORS = {
   conversationLink: 'a[href^="/c/"], a[href*="chatgpt.com/c/"]',
   stopButton: [
     'button[data-testid="stop-button"]',
+    'button[data-testid="composer-submit-button"]',
     'button[aria-label*="Stop"]',
     'button[aria-label*="停止"]',
   ].join(","),
@@ -175,6 +176,19 @@ async function assistantSnapshot(page) {
       }
     }
 
+    const composer = [...document.querySelectorAll('#prompt-textarea, textarea[placeholder], [contenteditable="true"]')]
+      .find((element) => element.getClientRects().length > 0);
+    const composerScope = composer?.closest("form") || composer?.parentElement?.parentElement?.parentElement;
+    const idleComposer = Boolean(composerScope && [...composerScope.querySelectorAll([
+      'button[aria-label*="Start Voice" i]',
+      'button[aria-label*="Start dictation" i]',
+      'button[aria-label*="开始语音"]',
+      'button[aria-label*="开始听写"]',
+    ].join(","))].some((element) => element.getClientRects().length > 0));
+    const turn = last?.closest('[data-turn="assistant"], [data-testid^="conversation-turn-"]');
+    const writing = Boolean(turn?.querySelector("[data-writing-block]"));
+    complete = complete || (idleComposer && !writing);
+
     const body = (last?.innerText || "").trim();
     const links = last ? [...last.querySelectorAll("a[href]")].map((anchor) => ({
       label: (anchor.innerText || anchor.getAttribute("aria-label") || anchor.title || "")
@@ -193,7 +207,7 @@ async function assistantSnapshot(page) {
     const linkText = missingLinks.length
       ? `\n\nLinks:\n${missingLinks.map((link) => `- ${link.label ? `${link.label}: ` : ""}${link.href}`).join("\n")}`
       : "";
-    return { count: messages.length, text: body + linkText, complete };
+    return { count: messages.length, text: body + linkText, complete, idleComposer, writing };
   });
 }
 
