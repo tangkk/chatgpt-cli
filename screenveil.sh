@@ -8,16 +8,31 @@ binary_file="$scratch_dir/ScreenVeil"
 mkdir -p "$scratch_dir"
 awk '/^: <<'"'"'__SCREENVEIL_SWIFT__'"'"'$/{ found = 1; next } found && /^__SCREENVEIL_SWIFT__$/{ exit } found { print }' "$0" > "$source_file"
 if [[ ! -x "$binary_file" || "$source_file" -nt "$binary_file" ]]; then
-  /usr/bin/swiftc "$source_file" -o "$binary_file" -framework AppKit -framework Security
+  /usr/bin/swiftc "$source_file" -o "$binary_file" -framework AppKit -framework Security -framework IOKit
 fi
 [[ "${1:-}" == "--check" ]] && exit 0
-exec "$binary_file"
+exec "$binary_file" "$@"
 : <<'__SCREENVEIL_SWIFT__'
 import AppKit
+import IOKit
+import IOKit.graphics
 import Security
 
 private let service = "io.github.chatgpt-web-cli.screenveil"
 private let account = "unlock-password"
+
+private func requestedBrightness() -> Float {
+    guard let index = CommandLine.arguments.firstIndex(of: "--brightness") else { return 0.20 }
+    guard index + 1 < CommandLine.arguments.count,
+          let value = Float(CommandLine.arguments[index + 1]),
+          (0...1).contains(value) else {
+        fputs("ScreenVeil: --brightness must be between 0.0 and 1.0.\n", stderr)
+        exit(2)
+    }
+    return value
+}
+
+private let targetBrightness = requestedBrightness()
 
 final class LockWindow: NSWindow {
     override var canBecomeKey: Bool { true }
@@ -32,16 +47,22 @@ final class ScreenVeil: NSObject, NSApplicationDelegate {
     private var isSettingPassword = false
     private var allowTermination = false
     private weak var primaryWindow: LockWindow?
+    private var originalBrightness: [(service: io_service_t, value: Float)] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         isSettingPassword = storedPassword() == nil
         buildOverlayWindows()
         NSApp.activate(ignoringOtherApps: true)
         focusPasswordField()
+        dimDisplays(to: targetBrightness)
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         allowTermination ? .terminateNow : .terminateCancel
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        restoreDisplayBrightness()
     }
 
     private func buildOverlayWindows() {
@@ -199,6 +220,31 @@ final class ScreenVeil: NSObject, NSApplicationDelegate {
         }
     }
     private func showError(_ message: String) { errorLabel.stringValue = message }
+    private func dimDisplays(to brightness: Float) {
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IODisplayConnect"), &iterator) == KERN_SUCCESS else { return }
+        defer { IOObjectRelease(iterator) }
+        while true {
+            let display = IOIteratorNext(iterator)
+            if display == 0 { break }
+            var current: Float = 0
+            if IODisplayGetFloatParameter(display, 0, kIODisplayBrightnessKey as CFString, &current) == kIOReturnSuccess {
+                originalBrightness.append((display, current))
+                _ = IODisplaySetFloatParameter(display, 0, kIODisplayBrightnessKey as CFString, brightness)
+            } else {
+                IOObjectRelease(display)
+            }
+        }
+    }
+
+    private func restoreDisplayBrightness() {
+        for original in originalBrightness {
+            _ = IODisplaySetFloatParameter(original.service, 0, kIODisplayBrightnessKey as CFString, original.value)
+            IOObjectRelease(original.service)
+        }
+        originalBrightness.removeAll()
+    }
+
     private func storedPassword() -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

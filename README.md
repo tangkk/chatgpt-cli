@@ -146,6 +146,17 @@ Start it:
 ./screenveil.sh
 ```
 
+ScreenVeil dims supported displays to 20% brightness by default. Override it
+with a value from `0.0` to `1.0`:
+
+```bash
+./screenveil.sh --brightness 0.35
+```
+
+The original brightness is restored after a successful ScreenVeil unlock.
+External displays that do not expose brightness control through macOS IOKit are
+left unchanged.
+
 ### Use ScreenVeil with chatgpt-web over SSH
 
 On the Mac, while the desktop is unlocked:
@@ -157,7 +168,8 @@ On the Mac, while the desktop is unlocked:
 
    ```bash
    cd chatgpt-cli
-   caffeinate -di ./screenveil.sh
+   caffeinate -di ./screenveil.sh                 # default: 20%
+   # or: caffeinate -di ./screenveil.sh --brightness 0.35
    ```
 
 ScreenVeil now covers the physical desktop, while its non-opaque window
