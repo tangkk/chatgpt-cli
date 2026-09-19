@@ -18,6 +18,15 @@ export function responseIsFinished({
   return Boolean(idle && quietForMs >= requiredFallbackMs);
 }
 
+// Replies can take a while (long answers, web search, reasoning). The wait is
+// capped at 5 minutes unless CHATGPT_CLI_TIMEOUT_SECONDS says otherwise.
+export function replyTimeoutMs(env = process.env) {
+  const seconds = Number(env.CHATGPT_CLI_TIMEOUT_SECONDS);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 5 * 60_000;
+}
+
+const EMPTY_REPLY = "(ChatGPT's reply has no text. It may be an image, file or other content; open ChatGPT to see it.)";
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -29,7 +38,7 @@ export async function waitForReply({
   snapshot,
   before,
   onPoll,
-  timeoutMs = 5 * 60_000,
+  timeoutMs = replyTimeoutMs(),
   pollMs = 100,
   retryMs = 500,
   maxConsecutiveFailures = 6,
@@ -55,8 +64,10 @@ export async function waitForReply({
       continue;
     }
 
-    const isNew = current.count > before.count || current.text !== before.text;
-    if (isNew && current.text) started = true;
+    // A new assistant block means the reply has begun even if it has no text yet
+    // (or never gets any, e.g. an image).
+    const newBlock = current.count > before.count;
+    if (newBlock || (current.text !== before.text && current.text)) started = true;
     if (started && current.text !== lastText) {
       lastText = current.text;
       stableSince = Date.now();
@@ -73,7 +84,7 @@ export async function waitForReply({
     })) {
       // If the formatted read fails, the plain text already seen is still a reply.
       const final = await snapshot({ html: true }).catch(() => null);
-      return htmlToMarkdown(final?.html) || final?.text || current.text;
+      return htmlToMarkdown(final?.html) || final?.text || current.text || EMPTY_REPLY;
     }
 
     await sleep(pollMs);

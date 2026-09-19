@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { printChatHistory, printConversations } from "../src/terminal.js";
+import { PassThrough } from "node:stream";
+import { createTerminal, printChatHistory, printConversations } from "../src/terminal.js";
 import { sessionIsAuthenticated } from "../src/chatgpt.js";
 import { ignoredPlaywrightArgs, loginChromeArgs } from "../src/browser.js";
 import { responseIsFinished } from "../src/response.js";
@@ -151,4 +152,40 @@ test("a hidden idle composer uses a longer completion fallback", () => {
     }),
     true,
   );
+});
+
+function fakeTerminal(options) {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  return { input, terminal: createTerminal({ input, output, pasteWindowMs: 20, ...options }) };
+}
+
+test("a multi-line paste arrives as one answer instead of losing lines", async () => {
+  const { input, terminal } = fakeTerminal();
+  try {
+    input.write("line one\nline two\n\nline four\n");
+    assert.equal(await terminal.question("You > "), "line one\nline two\n\nline four");
+  } finally {
+    terminal.close();
+  }
+});
+
+test("lines typed separately stay separate answers", async () => {
+  const { input, terminal } = fakeTerminal();
+  try {
+    input.write("first\n");
+    assert.equal(await terminal.question("You > "), "first");
+    setTimeout(() => input.write("second\n"), 60);
+    assert.equal(await terminal.question("You > "), "second");
+  } finally {
+    terminal.close();
+  }
+});
+
+test("end of input answers /quit instead of throwing", async () => {
+  const { input, terminal } = fakeTerminal();
+  input.end();
+  assert.equal(await terminal.question("You > "), "/quit");
+  assert.equal(await terminal.question("You > "), "/quit");
+  terminal.close();
 });

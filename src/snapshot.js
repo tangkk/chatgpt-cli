@@ -4,8 +4,10 @@
 //
 // `text` is the rendered text of the reply and is only used to notice that a
 // reply started or is still changing. With `{ html: true }` it also returns a
-// cleaned copy of the reply's HTML for conversion to markdown.
-export function readAssistantState({ html = false } = {}) {
+// cleaned copy of the reply's HTML for conversion to markdown. With
+// `{ recent: N }` it also returns the last N user/assistant messages (assistant
+// ones with cleaned HTML) for showing the conversation history.
+export function readAssistantState({ html = false, recent = 0 } = {}) {
   const visible = (element) => Boolean(element && element.getClientRects().length > 0);
   const primary = [...document.querySelectorAll('[data-message-author-role="assistant"]')];
   const messages = primary.length
@@ -203,11 +205,27 @@ export function readAssistantState({ html = false } = {}) {
   ].join(","))].some(visible));
   const writing = Boolean(turn?.querySelector("[data-writing-block]"));
 
+  const recentMessages = () => {
+    const role = (node) => node.getAttribute("data-message-author-role") || node.getAttribute("data-turn") || "assistant";
+    const primaryNodes = [...document.querySelectorAll(
+      '[data-message-author-role="user"], [data-message-author-role="assistant"]',
+    )];
+    const nodes = primaryNodes.length
+      ? primaryNodes
+      : [...document.querySelectorAll('article[data-turn="user"], article[data-turn="assistant"]')];
+    return nodes.slice(-recent).map((node) => ({
+      role: role(node),
+      text: (node.innerText || "").trim(),
+      html: role(node) === "user" ? "" : safeHtml([node]),
+    }));
+  };
+
   const text = blocks.map((block) => (block.innerText || "").trim()).filter(Boolean).join("\n\n");
   return {
     count: messages.length,
     text,
     html: html ? safeHtml(blocks) : "",
+    recent: recent ? recentMessages() : [],
     stop,
     complete,
     idleComposer,
@@ -218,5 +236,10 @@ export function readAssistantState({ html = false } = {}) {
 
 export function parseSnapshot(raw) {
   const state = raw && typeof raw === "object" ? raw : {};
-  return { ...state, text: String(state.text ?? ""), html: String(state.html ?? "") };
+  return {
+    ...state,
+    text: String(state.text ?? ""),
+    html: String(state.html ?? ""),
+    recent: Array.isArray(state.recent) ? state.recent : [],
+  };
 }

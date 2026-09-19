@@ -1,8 +1,62 @@
-import readline from "node:readline/promises";
+import readline from "node:readline";
 import { stdin, stdout } from "node:process";
 
-export function createTerminal() {
-  return readline.createInterface({ input: stdin, output: stdout });
+// Line reader that keeps a multi-line paste together. A plain readline question
+// only takes the next line and silently drops the rest of a paste, so lines that
+// arrive within `pasteWindowMs` of each other are joined into one answer.
+// End of input answers "/quit" instead of throwing.
+export function createTerminal({ input = stdin, output = stdout, pasteWindowMs = 30 } = {}) {
+  const rl = readline.createInterface({ input, output });
+  const queue = [];
+  let waiter = null;
+  let closed = false;
+
+  const wake = (value) => {
+    const resolve = waiter;
+    waiter = null;
+    if (resolve) resolve(value);
+  };
+  rl.on("line", (line) => {
+    if (waiter) wake({ line });
+    else queue.push(line);
+  });
+  rl.on("close", () => {
+    closed = true;
+    wake({ closed: true });
+  });
+
+  // Resolves with { line }, { closed: true }, or { timeout: true }.
+  const nextLine = (timeoutMs) => {
+    if (queue.length) return Promise.resolve({ line: queue.shift() });
+    if (closed) return Promise.resolve({ closed: true });
+    return new Promise((resolve) => {
+      const timer = timeoutMs === undefined ? null : setTimeout(() => wake({ timeout: true }), timeoutMs);
+      waiter = (value) => {
+        if (timer) clearTimeout(timer);
+        resolve(value);
+      };
+    });
+  };
+
+  return {
+    async question(text) {
+      if (closed && !queue.length) return "/quit";
+      rl.setPrompt(text);
+      rl.prompt();
+      const first = await nextLine();
+      if (first.closed) return "/quit";
+      const lines = [first.line];
+      for (;;) {
+        const more = await nextLine(pasteWindowMs);
+        if (more.line === undefined) break;
+        lines.push(more.line);
+      }
+      return lines.join("\n");
+    },
+    close() {
+      rl.close();
+    },
+  };
 }
 
 // Replies are printed once ChatGPT has finished, so a placeholder line is shown

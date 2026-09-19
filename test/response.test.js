@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { waitForReply } from "../src/response.js";
+import { replyTimeoutMs, waitForReply } from "../src/response.js";
 
 const done = { complete: true, stop: false, visible: true };
 
@@ -101,4 +101,22 @@ test("waitForReply falls back to the plain text if the formatted read fails", as
   const reply = await waitForReply({ snapshot, before: { count: 0, text: "" }, pollMs: 0 });
   assert.equal(reply, "plain answer");
   assert.ok(reads >= 1);
+});
+
+test("waitForReply treats a new assistant block as started even when it has no text", async () => {
+  const frames = [
+    { count: 2, text: "", stop: true },
+    { count: 2, text: "", complete: true, stop: false, visible: true },
+  ];
+  let i = 0;
+  const snapshot = async (options) => (options?.html ? { html: "", text: "" } : frames[Math.min(i++, frames.length - 1)]);
+  const reply = await waitForReply({ snapshot, before: { count: 1, text: "old" }, pollMs: 0 });
+  assert.match(reply, /no text/);
+});
+
+test("replyTimeoutMs reads CHATGPT_CLI_TIMEOUT_SECONDS and ignores bad values", () => {
+  assert.equal(replyTimeoutMs({}), 300_000);
+  assert.equal(replyTimeoutMs({ CHATGPT_CLI_TIMEOUT_SECONDS: "900" }), 900_000);
+  assert.equal(replyTimeoutMs({ CHATGPT_CLI_TIMEOUT_SECONDS: "abc" }), 300_000);
+  assert.equal(replyTimeoutMs({ CHATGPT_CLI_TIMEOUT_SECONDS: "-5" }), 300_000);
 });

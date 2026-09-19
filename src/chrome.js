@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { waitForReply } from "./response.js";
+import { htmlToMarkdown } from "./markdown.js";
+import { replyTimeoutMs, waitForReply } from "./response.js";
 import { parseSnapshot, readAssistantState } from "./snapshot.js";
 
 const execFileAsync = promisify(execFile);
@@ -200,23 +201,19 @@ export async function chromeRecentMessages(
 ) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const result = await executeChromeJavaScript(`
-      JSON.stringify((() => {
-        const primary = [...document.querySelectorAll('[data-message-author-role="user"], [data-message-author-role="assistant"]')];
-        const nodes = primary.length
-          ? primary
-          : [...document.querySelectorAll('article[data-turn="user"], article[data-turn="assistant"]')];
-        return nodes.slice(-${Number(limit)}).map((node) => {
-          const role = node.getAttribute('data-message-author-role') || node.getAttribute('data-turn') || 'assistant';
-          const text = (node.innerText || '').replace(/\\n{3,}/g, '\\n\\n').trim();
-          return {
-            role,
-            text: text.length > ${Number(maxChars)} ? text.slice(0, ${Number(maxChars)}) + '…' : text,
-          };
-        }).filter((message) => message.text);
-      })())
-    `);
-    const messages = JSON.parse(result || "[]");
+    // The same cleaning as live replies, so history shows tables, code and
+    // lists the same way instead of the page's raw text.
+    const snapshot = await chromeAssistantSnapshot({ recent: limit }).catch(() => null);
+    const messages = (snapshot?.recent || [])
+      .map((message) => ({
+        role: message.role,
+        text: (message.html ? htmlToMarkdown(message.html) : "") || message.text.replace(/\n{3,}/g, "\n\n"),
+      }))
+      .filter((message) => message.text)
+      .map((message) => ({
+        ...message,
+        text: message.text.length > maxChars ? `${message.text.slice(0, maxChars)}…` : message.text,
+      }));
     if (messages.length) return messages;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
@@ -255,10 +252,14 @@ async function waitForChromePath(pathname, { timeoutMs = 60_000 } = {}) {
   throw new Error("Timed out waiting for ChatGPT to open the selected conversation.");
 }
 
-export async function chromeAssistantSnapshot({ html = false } = {}) {
-  const result = await executeChromeJavaScript(
-    `JSON.stringify((${readAssistantState.toString()})(${JSON.stringify({ html })}))`,
-  );
+// The script the Chrome bridge runs in the page: the shared snapshot function,
+// called with the options it was asked for.
+export function assistantSnapshotScript({ html = false, recent = 0 } = {}) {
+  return `JSON.stringify((${readAssistantState.toString()})(${JSON.stringify({ html, recent })}))`;
+}
+
+export async function chromeAssistantSnapshot(options = {}) {
+  const result = await executeChromeJavaScript(assistantSnapshotScript(options));
   try {
     return parseSnapshot(JSON.parse(result || "{}"));
   } catch {
@@ -342,7 +343,7 @@ async function clickChromeSend() {
   throw new Error("ChatGPT's send button did not become available.");
 }
 
-export async function chromeSendMessage(prompt, { timeoutMs = 5 * 60_000 } = {}) {
+export async function chromeSendMessage(prompt, { timeoutMs = replyTimeoutMs() } = {}) {
   await activateChromeChatGPTTab();
   const before = await chromeAssistantSnapshot();
   await setChromePrompt(prompt);

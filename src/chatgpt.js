@@ -1,4 +1,4 @@
-import { waitForReply } from "./response.js";
+import { replyTimeoutMs, waitForReply } from "./response.js";
 import { parseSnapshot, readAssistantState } from "./snapshot.js";
 
 const CHATGPT_URL = "https://chatgpt.com/";
@@ -168,7 +168,7 @@ async function writePrompt(page, prompt) {
   await composer.press("Enter");
 }
 
-export async function sendMessage(page, prompt, { timeoutMs = 5 * 60_000 } = {}) {
+export async function sendMessage(page, prompt, { timeoutMs = replyTimeoutMs() } = {}) {
   const before = await assistantSnapshot(page);
   await writePrompt(page, prompt);
 

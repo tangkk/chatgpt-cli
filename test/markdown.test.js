@@ -66,3 +66,25 @@ test("tidyMarkdown turns non-breaking and doubled spaces into one space outside 
     "see [a](https://x.test/) for it\n\n```\nkeep   this\n```\n\n- a b\n  - nested",
   );
 });
+
+test("tidyMarkdown leaves a nested fence's code untouched", () => {
+  const doc = "````markdown\n# T\n\n\n\n```python\nx = 1   \n\n\n\ny = 2\n```\n\n\n\nafter inner\n````\n\n\ntext   here";
+  assert.equal(
+    tidyMarkdown(doc),
+    "````markdown\n# T\n\n\n\n```python\nx = 1   \n\n\n\ny = 2\n```\n\n\n\nafter inner\n````\n\ntext here",
+  );
+});
+
+test("tidyMarkdown handles tilde fences and fences inside blockquotes", () => {
+  assert.equal(
+    tidyMarkdown("~~~\na  b  \n\n\n\nc\n~~~\n\n> ```bash\n>     if x:  y\n> ```\n\n\nend"),
+    "~~~\na  b  \n\n\n\nc\n~~~\n\n> ```bash\n>     if x:  y\n> ```\n\nend",
+  );
+});
+
+test("htmlToMarkdown keeps code that itself contains fences", () => {
+  assert.equal(
+    htmlToMarkdown("<pre><code>```python\nx = 1   \n\n\n\ny = 2\n```</code></pre><p>after</p>"),
+    "````\n```python\nx = 1   \n\n\n\ny = 2\n```\n````\n\nafter",
+  );
+});

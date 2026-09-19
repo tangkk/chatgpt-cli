@@ -69,11 +69,22 @@ function createConverter() {
 // so code keeps its exact whitespace.
 export function tidyMarkdown(markdown) {
   const out = [];
-  let inFence = false;
+  // A fence opens with 3+ backticks or tildes and closes only with the same
+  // character, at least as long, and nothing else on the line. That lets a
+  // block fenced with ```` contain ``` lines. A leading "> " (blockquote) is
+  // ignored when looking for fences.
+  let fence = null;
   let blank = false;
   for (const line of markdown.replace(/\r\n?/g, "\n").split("\n")) {
-    if (/^\s*```/.test(line)) inFence = !inFence;
-    if (inFence || /^\s*```/.test(line)) {
+    if (fence) {
+      out.push(line);
+      const close = line.match(/^[ \t>]*(`{3,}|~{3,})[ \t]*$/);
+      if (close && close[1][0] === fence.char && close[1].length >= fence.length) fence = null;
+      continue;
+    }
+    const open = line.match(/^[ \t>]*(`{3,}|~{3,})/);
+    if (open) {
+      fence = { char: open[1][0], length: open[1].length };
       out.push(line);
       blank = false;
       continue;

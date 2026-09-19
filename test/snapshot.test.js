@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 import { chromium } from "playwright-core";
 import { chromeExecutable } from "../src/browser.js";
+import { assistantSnapshotScript } from "../src/chrome.js";
 import { htmlToMarkdown } from "../src/markdown.js";
 import { parseSnapshot, readAssistantState } from "../src/snapshot.js";
 
@@ -235,4 +236,64 @@ const FLOW_FIXTURE = `
 test("ordinary paragraphs inside the component renderer stay separate paragraphs", { skip }, async () => {
   const { markdown } = await readFixture(FLOW_FIXTURE);
   assert.equal(markdown, "## Heading\n\nFirst paragraph.\n\nSecond paragraph.\n\n- item\n\nThird paragraph.");
+});
+
+test("an empty page (a new chat with no messages yet) reads as an empty reply", { skip }, async () => {
+  const { state } = await readFixture("<main><textarea placeholder='Ask anything'></textarea></main>");
+  assert.equal(state.count, 0);
+  assert.equal(state.text, "");
+  assert.equal(state.html, "");
+  assert.equal(state.complete, false);
+});
+
+const HISTORY_FIXTURE = `
+<div data-message-author-role="user"><div class="whitespace-pre-wrap" style="white-space: pre-wrap">Compare two things.
+Second line of my question.</div></div>
+<section data-turn="assistant" data-testid="conversation-turn-2">
+  <div data-message-author-role="assistant"><div class="markdown">
+    <table><thead><tr><th><p>Name</p></th><th><p>Size</p></th></tr></thead>
+    <tbody><tr><td><p>alpha</p></td><td><p>1</p></td></tr></tbody></table>
+    <div data-client-defined-widget="code_block"><div><div class="text-token-text-primary">Python</div><button>Copy</button></div><div><pre><code><span>x = 1</span></code></pre></div></div>
+  </div></div>
+  <button data-testid="copy-turn-action-button">Copy</button>
+</section>`;
+
+test("recent messages come back per message, cleaned for assistants and raw for the user", { skip }, async () => {
+  const browser = await chromium.launch({ executablePath: chromePath, headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(HISTORY_FIXTURE);
+    const state = parseSnapshot(await page.evaluate(readAssistantState, { recent: 6 }));
+    assert.deepEqual(state.recent.map((message) => message.role), ["user", "assistant"]);
+    assert.equal(state.recent[0].text, "Compare two things.\nSecond line of my question.");
+    assert.equal(state.recent[0].html, "");
+    assert.equal(
+      htmlToMarkdown(state.recent[1].html),
+      "| Name | Size |\n| --- | --- |\n| alpha | 1 |\n\n```python\nx = 1\n```",
+    );
+    // Not requested, not returned.
+    assert.deepEqual(parseSnapshot(await page.evaluate(readAssistantState)).recent, []);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("the script the Chrome bridge runs forwards its options and returns parseable JSON", { skip }, async () => {
+  const browser = await chromium.launch({ executablePath: chromePath, headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(HISTORY_FIXTURE);
+    // The bridge runs this source text through eval() inside the page.
+    const run = async (options) => parseSnapshot(JSON.parse(
+      await page.evaluate((code) => window.eval(code), assistantSnapshotScript(options)),
+    ));
+    const plain = await run({});
+    assert.equal(plain.html, "");
+    assert.deepEqual(plain.recent, []);
+    assert.match(plain.text, /alpha/);
+    assert.match((await run({ html: true })).html, /<table>/);
+    assert.equal((await run({ recent: 2 })).recent.length, 2);
+  } finally {
+    await browser.close();
+  }
 });
