@@ -59,3 +59,10 @@ test("tidyMarkdown trims outside code and leaves code alone", () => {
     "a\n\nb\n```\nx  \n\n\n\ny\n```\n\nc",
   );
 });
+
+test("tidyMarkdown turns non-breaking and doubled spaces into one space outside code", () => {
+  assert.equal(
+    tidyMarkdown("see [a](https://x.test/)  for it\n\n```\nkeep   this\n```\n\n- a  b\n  - nested"),
+    "see [a](https://x.test/) for it\n\n```\nkeep   this\n```\n\n- a b\n  - nested",
+  );
+});

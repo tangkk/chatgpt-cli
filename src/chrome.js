@@ -259,7 +259,12 @@ export async function chromeAssistantSnapshot({ html = false } = {}) {
   const result = await executeChromeJavaScript(
     `JSON.stringify((${readAssistantState.toString()})(${JSON.stringify({ html })}))`,
   );
-  return parseSnapshot(JSON.parse(result || "{}"));
+  try {
+    return parseSnapshot(JSON.parse(result || "{}"));
+  } catch {
+    // Chrome answers "missing value" when the page script throws or is busy.
+    throw new Error(`The ChatGPT tab did not return a readable snapshot (${JSON.stringify(result.slice(0, 40))}).`);
+  }
 }
 
 async function setChromePrompt(prompt, { timeoutMs = 20_000 } = {}) {

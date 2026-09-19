@@ -45,6 +45,12 @@ function createConverter() {
 
   converter.use(gfm);
 
+  // The gfm plugin writes ~single~ tildes; ~~double~~ is the form people expect.
+  converter.addRule("strikethrough", {
+    filter: ["del", "s", "strike"],
+    replacement: (content) => `~~${content}~~`,
+  });
+
   // Overrides the gfm table cell rule (added last, so it matches first) to
   // escape "|" and keep each cell on one line.
   converter.addRule("tableCell", {
@@ -58,7 +64,8 @@ function createConverter() {
   return converter;
 }
 
-// Trailing spaces and runs of blank lines are tidied outside fenced code only,
+// Non-breaking spaces, trailing and doubled spaces (e.g. after a link whose
+// text ended in a space) and runs of blank lines are tidied outside fenced code only,
 // so code keeps its exact whitespace.
 export function tidyMarkdown(markdown) {
   const out = [];
@@ -71,7 +78,10 @@ export function tidyMarkdown(markdown) {
       blank = false;
       continue;
     }
-    const trimmed = line.replace(/[ \t ]+$/, "");
+    const trimmed = line
+      .replace(/\u00a0/g, " ")
+      .replace(/[ \t]+$/, "")
+      .replace(/(\S) {2,}(?=\S)/g, "$1 ");
     if (!trimmed) {
       if (!blank) out.push("");
       blank = true;

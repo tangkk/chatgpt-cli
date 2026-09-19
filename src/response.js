@@ -31,15 +31,29 @@ export async function waitForReply({
   onPoll,
   timeoutMs = 5 * 60_000,
   pollMs = 100,
+  retryMs = 500,
+  maxConsecutiveFailures = 6,
 }) {
   const deadline = Date.now() + timeoutMs;
   let started = false;
   let lastText = "";
   let stableSince = Date.now();
+  let failures = 0;
 
   while (Date.now() < deadline) {
-    const current = await snapshot();
-    if (onPoll) await onPoll(current);
+    // A single failed read (Chrome busy, page navigating) must not lose a reply
+    // that ChatGPT is still writing; give up only after repeated failures.
+    let current;
+    try {
+      current = await snapshot();
+      if (onPoll) await onPoll(current);
+      failures = 0;
+    } catch (error) {
+      failures += 1;
+      if (failures >= maxConsecutiveFailures) throw error;
+      await sleep(retryMs);
+      continue;
+    }
 
     const isNew = current.count > before.count || current.text !== before.text;
     if (isNew && current.text) started = true;
@@ -57,8 +71,9 @@ export async function waitForReply({
       visible: current.visible,
       quietForMs: Date.now() - stableSince,
     })) {
-      const final = await snapshot({ html: true });
-      return htmlToMarkdown(final.html) || final.text || current.text;
+      // If the formatted read fails, the plain text already seen is still a reply.
+      const final = await snapshot({ html: true }).catch(() => null);
+      return htmlToMarkdown(final?.html) || final?.text || current.text;
     }
 
     await sleep(pollMs);

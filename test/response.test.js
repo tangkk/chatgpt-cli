@@ -59,3 +59,46 @@ test("waitForReply times out when the reply never finishes", async () => {
     /Timed out/,
   );
 });
+
+test("waitForReply survives a few failed reads while the reply is still being written", async () => {
+  let calls = 0;
+  const frames = [
+    { count: 1, text: "Par", stop: true },
+    "boom",
+    "boom",
+    { count: 1, text: "Paris.", complete: true, stop: false, visible: true },
+  ];
+  const snapshot = async (options) => {
+    if (options?.html) return { html: "<p>Paris.</p>", text: "Paris." };
+    const frame = frames[Math.min(calls++, frames.length - 1)];
+    if (frame === "boom") throw new Error("osascript timed out");
+    return frame;
+  };
+  const reply = await waitForReply({ snapshot, before: { count: 0, text: "" }, pollMs: 0, retryMs: 0 });
+  assert.equal(reply, "Paris.");
+});
+
+test("waitForReply gives up after repeated failed reads", async () => {
+  await assert.rejects(
+    waitForReply({
+      before: { count: 0, text: "" },
+      snapshot: async () => { throw new Error("tab is gone"); },
+      pollMs: 0,
+      retryMs: 0,
+      maxConsecutiveFailures: 3,
+    }),
+    /tab is gone/,
+  );
+});
+
+test("waitForReply falls back to the plain text if the formatted read fails", async () => {
+  let reads = 0;
+  const snapshot = async (options) => {
+    if (options?.html) throw new Error("page busy");
+    reads += 1;
+    return { count: 1, text: "plain answer", complete: true, stop: false, visible: true };
+  };
+  const reply = await waitForReply({ snapshot, before: { count: 0, text: "" }, pollMs: 0 });
+  assert.equal(reply, "plain answer");
+  assert.ok(reads >= 1);
+});

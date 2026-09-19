@@ -140,3 +140,99 @@ test("relative links become absolute and text-less link cards keep a label", { s
     "Read [this chat](https://chatgpt.com/c/abc123) and [Example News](https://news.example.com/story).",
   );
 });
+
+// Structure captured from ChatGPT's current component renderer: styling is on
+// <span data-d-*>, list items are li > div > div > p, links end in &nbsp;, and
+// a code block keeps its language only in a header bar next to the <pre>.
+const COMPONENT_FIXTURE = `
+<section data-turn="assistant" data-testid="conversation-turn-4">
+  <div data-message-author-role="assistant"><div class="markdown">
+    <p data-d-component="text"><span data-d-component="text" data-d-default-strong="" data-d-inline="">Node.js</span> is fast, <span data-d-component="text" data-d-font-style="italic" data-d-inline="">really</span> and <span data-d-component="text" data-d-text-decoration="line-through" data-d-inline="">slow</span>; see <a href="https://nodejs.org/"><span data-d-text-decoration="underline-dotted">the site </span><span data-d-has-width="true"><span>docs</span>&nbsp;</span></a> for more.</p>
+    <p data-d-component="text">1. <span data-d-component="text" data-d-default-strong="" data-d-inline="">Install</span></p>
+    <ul data-d-marker=""><li><div><div><p data-d-component="text">Download it.</p></div></div></li><li><div><div><p data-d-component="text">Run it.</p></div></div></li></ul>
+    <div data-client-defined-widget="code_block"><div><div>
+      <div><div class="text-token-text-primary"><svg><use></use></svg>Python</div><div><button type="button"><svg></svg></button><button aria-label="Run code"><div>Run</div></button></div></div>
+      <div><div><pre><code><span>def</span><span> </span><span>f</span><span>():
+    return</span><span> 1</span></code></pre></div></div>
+    </div></div></div>
+  </div></div>
+  <button data-testid="copy-turn-action-button">Copy</button>
+</section>`;
+
+test("ChatGPT's component markup keeps bold/italic, tight lists and code languages", { skip }, async () => {
+  const { markdown } = await readFixture(COMPONENT_FIXTURE);
+  assert.equal(markdown, [
+    "**Node.js** is fast, *really* and ~~slow~~; see [the site docs](https://nodejs.org/) for more.",
+    "",
+    "1. **Install**",
+    "",
+    "- Download it.",
+    "- Run it.",
+    "",
+    "```python",
+    "def f():",
+    "    return 1",
+    "```",
+  ].join("\n"));
+});
+
+// In the live page the badge <div> sits inside a <p>, which an HTML parser
+// would split; a <div> wrapper keeps the fixture's structure intact.
+const CITATION_FIXTURE = `
+<section data-turn="assistant" data-testid="conversation-turn-6">
+  <div data-message-author-role="assistant"><div class="markdown">
+    <div class="para">The LTS release is v24.<div role="button" data-state="closed"><div data-d-component="badge" data-pill=""><div><div role="presentation"><img src="x.png"></div></div><div><div><span>GitHub</span></div><div><span>+1</span></div></div></div></div> Newer builds exist.</div>
+  </div></div>
+  <button data-testid="copy-turn-action-button">Copy</button>
+</section>`;
+
+test("citation pills stay inline as a bracketed source label", { skip }, async () => {
+  const { markdown } = await readFixture(CITATION_FIXTURE);
+  assert.match(markdown, /LTS release is v24\. \[GitHub \+1\] Newer builds exist\./);
+  assert.doesNotMatch(markdown, /\n\+1\n/);
+});
+
+const TASK_FIXTURE = `
+<section data-turn="assistant" data-testid="conversation-turn-8">
+  <div data-message-author-role="assistant"><div class="markdown">
+    <ul data-d-marker="none">
+      <li data-d-component="list-item"><div><div><div><button type="button" role="checkbox" aria-checked="true" data-state="checked"><span></span></button><label><span>Calculate it</span></label></div></div></div></li>
+      <li data-d-component="list-item"><div><div><div><button type="button" role="checkbox" aria-checked="false" data-state="unchecked"></button><label><span>Verify it</span></label></div></div></div></li>
+    </ul>
+    <blockquote><p>Run this:</p><div data-d-component="code_block"><div><div class="text-token-text-primary">Bash</div><button>Copy</button></div><div><pre><code><span>echo</span><span> "hi"</span></code></pre></div></div></blockquote>
+  </div></div>
+  <button data-testid="copy-turn-action-button">Copy</button>
+</section>`;
+
+test("task lists keep their checked state and quoted code keeps its language", { skip }, async () => {
+  const { markdown } = await readFixture(TASK_FIXTURE);
+  assert.equal(markdown, [
+    "- [x] Calculate it",
+    "- [ ] Verify it",
+    "",
+    "> Run this:",
+    ">",
+    "> ```bash",
+    '> echo "hi"',
+    "> ```",
+  ].join("\n"));
+});
+
+const FLOW_FIXTURE = `
+<section data-turn="assistant" data-testid="conversation-turn-9">
+  <div data-message-author-role="assistant"><div class="markdown">
+    <div class="puik-root not-prose not-markdown">
+      <h2>Heading</h2>
+      <p data-d-component="text">First paragraph.</p>
+      <p data-d-component="text">Second paragraph.</p>
+      <ul><li><div><div><p>item</p></div></div></li></ul>
+      <p data-d-component="text">Third paragraph.</p>
+    </div>
+  </div></div>
+  <button data-testid="copy-turn-action-button">Copy</button>
+</section>`;
+
+test("ordinary paragraphs inside the component renderer stay separate paragraphs", { skip }, async () => {
+  const { markdown } = await readFixture(FLOW_FIXTURE);
+  assert.equal(markdown, "## Heading\n\nFirst paragraph.\n\nSecond paragraph.\n\n- item\n\nThird paragraph.");
+});

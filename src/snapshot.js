@@ -29,6 +29,23 @@ export function readAssistantState({ html = false } = {}) {
       junk.remove();
     }
 
+    // Task-list checkboxes are <button role="checkbox">, not <input>.
+    for (const box of clone.querySelectorAll('[role="checkbox"]')) {
+      box.replaceWith(document.createTextNode(box.getAttribute("aria-checked") === "true" ? "[x] " : "[ ] "));
+    }
+
+    // Citation pills are <div role="button"> badges with no link in the DOM (the
+    // URL only appears in a popover). Keep the label inline, e.g. "[GitHub +1]".
+    for (const badge of clone.querySelectorAll('[data-d-component="badge"]')) {
+      const label = [...badge.querySelectorAll("span")]
+        .filter((part) => !part.querySelector("span"))
+        .map((part) => part.textContent.trim())
+        .filter(Boolean)
+        .join(" ") || badge.textContent.trim();
+      const holder = badge.closest('[role="button"]') || badge;
+      holder.replaceWith(document.createTextNode(label ? ` [${label}]` : ""));
+    }
+
     // Math becomes a custom element so it reaches the markdown untouched.
     const texOf = (element) => (
       element.querySelector('annotation[encoding="application/x-tex"]')
@@ -50,22 +67,60 @@ export function readAssistantState({ html = false } = {}) {
       inline.replaceWith(mathElement(inline, false));
     }
 
-    // ChatGPT wraps code in a header bar plus nested divs; keep just the code
-    // and its language.
-    for (const pre of clone.querySelectorAll("pre")) {
-      const code = pre.querySelector("code");
-      if (!code) continue;
-      const language = (code.className.match(/language-([\w+#.-]+)/) || [])[1] || "";
-      const plain = document.createElement("pre");
-      const inner = document.createElement("code");
-      if (language) inner.className = `language-${language}`;
-      inner.textContent = code.textContent;
-      plain.append(inner);
-      pre.replaceWith(plain);
+    // Bold, italic and strikethrough arrive as <span data-d-*> rather than
+    // <strong>/<em>/<del>, which the converter would not recognise.
+    for (const span of clone.querySelectorAll(
+      '[data-d-default-strong], [data-d-font-style="italic"], [data-d-text-decoration~="line-through"]',
+    )) {
+      const names = [];
+      if (span.hasAttribute("data-d-default-strong")) names.push("strong");
+      if (span.getAttribute("data-d-font-style") === "italic") names.push("em");
+      if ((span.getAttribute("data-d-text-decoration") || "").includes("line-through")) names.push("del");
+      let outer = null;
+      let innermost = null;
+      for (const name of names) {
+        const element = document.createElement(name);
+        if (innermost) innermost.append(element);
+        else outer = element;
+        innermost = element;
+      }
+      innermost.append(...span.childNodes);
+      span.replaceWith(outer);
     }
 
-    // <p> inside list items and table cells would turn tight lists into loose
-    // ones and break table rows across lines.
+    // Code blocks: the language is only shown in a header bar beside the <pre>
+    // (with buttons), not on the <code>. Keep just the code and its language.
+    const plainCode = (pre, language) => {
+      const code = pre.querySelector("code");
+      const plain = document.createElement("pre");
+      const inner = document.createElement("code");
+      const known = (code.className.match(/language-([\w+#.-]+)/) || [])[1] || language;
+      if (known) inner.className = `language-${known}`;
+      inner.textContent = code.textContent;
+      plain.append(inner);
+      return plain;
+    };
+    for (const root of clone.querySelectorAll(
+      '[data-client-defined-widget="code_block"], [data-d-component="code_block"]',
+    )) {
+      const pre = root.querySelector("pre");
+      if (!pre || !pre.querySelector("code")) continue;
+      const header = root.cloneNode(true);
+      for (const part of header.querySelectorAll("pre, button")) part.remove();
+      const label = header.textContent.trim().toLowerCase().replace(/\s+/g, "");
+      root.replaceWith(plainCode(pre, /^[a-z0-9+#.-]{1,24}$/.test(label) ? label : ""));
+    }
+    for (const pre of clone.querySelectorAll("pre")) {
+      if (pre.querySelector("code")) pre.replaceWith(plainCode(pre, ""));
+    }
+
+    // List items wrap their text in nested divs and <p>s, which would turn tight
+    // lists into loose ones; table cells would break rows across lines.
+    for (const item of clone.querySelectorAll("li")) {
+      for (const wrapper of [...item.querySelectorAll("div")]) {
+        if (wrapper.closest("li") === item) wrapper.replaceWith(...wrapper.childNodes);
+      }
+    }
     for (const paragraph of clone.querySelectorAll("li > p:first-child")) {
       paragraph.replaceWith(...paragraph.childNodes);
     }
@@ -88,24 +143,32 @@ export function readAssistantState({ html = false } = {}) {
       }
     }
 
-    // Rich answer widgets (cards, comparison boxes) are nested divs and <p>s
-    // that would each become a paragraph of their own. Keep their lines together.
-    for (const widget of clone.querySelectorAll(".not-markdown")) {
-      const lines = [...widget.querySelectorAll("p, div")].filter((element) => (
-        !element.closest("table")
-        && !element.querySelector("p, div, h1, h2, h3, h4, h5, h6, table, ul, ol, pre, blockquote")
-      ));
+    // Rich answer widgets (cards, comparison boxes) lay out a title and a
+    // subtitle as <p>, <empty spacer div>, <p>. Keep such a group on adjacent
+    // lines. Ordinary paragraphs, even inside the same renderer, stay paragraphs.
+    for (const spacer of clone.querySelectorAll(".not-markdown div")) {
+      if (spacer.children.length || spacer.textContent.trim()) continue;
+      const box = spacer.parentElement;
+      const lines = [...box.children].filter((child) => child.tagName === "P" && child.textContent.trim());
+      if (lines.length < 2) continue;
       for (const element of lines) {
-        if (!element.textContent.trim()) {
-          element.remove();
-          continue;
-        }
         const line = document.createElement("span");
         line.append(...element.childNodes);
         element.replaceWith(line, document.createElement("br"));
       }
+      spacer.remove();
     }
     return clone.outerHTML;
+  };
+
+  // If cleaning throws on an unexpected page structure, return no HTML so the
+  // caller falls back to the plain text instead of losing the reply.
+  const safeHtml = (list) => {
+    try {
+      return list.map(cleanedHtml).join("\n");
+    } catch {
+      return "";
+    }
   };
 
   const stop = [...document.querySelectorAll([
@@ -144,7 +207,7 @@ export function readAssistantState({ html = false } = {}) {
   return {
     count: messages.length,
     text,
-    html: html ? blocks.map(cleanedHtml).join("\n") : "",
+    html: html ? safeHtml(blocks) : "",
     stop,
     complete,
     idleComposer,
