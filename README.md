@@ -161,7 +161,7 @@ expose brightness that way, so they are dimmed over DDC/CI with
 [`ddcctl`](https://github.com/kfix/ddcctl) (`brew install ddcctl`) when it is
 installed; without it they are left unchanged. ScreenVeil reads the monitor's
 current brightness before dimming and restores it on unlock. Some monitors
-never answer DDC reads; for those it restores to 80 instead, or to a level you
+never answer DDC reads; for those it restores to 90 instead, or to a level you
 choose with `--restore N` (0 to 100):
 
 ```bash
@@ -169,7 +169,7 @@ choose with `--restore N` (0 to 100):
 ```
 
 If ScreenVeil is killed instead of unlocked, an external monitor stays dim.
-Reset it by hand, for example `ddcctl -d 1 -b 80`.
+Reset it by hand, for example `ddcctl -d 1 -b 90`.
 
 ### Use ScreenVeil with chatgpt-cli over SSH
 

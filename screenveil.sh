@@ -38,7 +38,7 @@ private let targetBrightness = requestedBrightness()
 // over DDC/CI with ddcctl (brew install ddcctl). The current level is read
 // before dimming and restored on unlock. Some monitors never answer DDC reads
 // (e.g. Dell U2520DR here), so fall back to a fixed level, or to --restore N.
-private let fallbackRestoreLevel = 80
+private let fallbackRestoreLevel = 90
 
 private func requestedRestoreLevel() -> Int? {
     guard let index = CommandLine.arguments.firstIndex(of: "--restore") else { return nil }
