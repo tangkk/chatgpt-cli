@@ -21,14 +21,15 @@ without moving the conversation into Codex or the OpenAI API.
 - Starts new conversations through ChatGPT's in-page control, avoiding a
   foreground-stealing AppleScript URL navigation.
 - Shows up to six recent user/assistant messages before the prompt.
-- Streams ChatGPT responses in the terminal.
+- Waits for ChatGPT to finish, then prints the reply once as markdown (tables,
+  lists, code blocks and math are kept readable) instead of streaming it.
 - Waits for ChatGPT's completed-response controls, so web searches and long
   pauses do not prematurely return to the input prompt.
 - Keeps the ChatGPT tab active inside its Chrome window while a response is
   running, without bringing Chrome to the foreground. This avoids background
   tab rendering throttles truncating search responses.
-- Prints external citation URLs that are otherwise represented only by link
-  cards in the web UI.
+- Keeps citation URLs that are otherwise only link cards in the web UI as
+  inline markdown links.
 - Keeps messages in the actual ChatGPT web conversation and history.
 
 ## Requirements

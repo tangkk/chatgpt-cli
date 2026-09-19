@@ -21,6 +21,7 @@ import {
   createTerminal,
   printChatHistory,
   printConversations,
+  replyWhileWaiting,
 } from "./terminal.js";
 import {
   checkChromeBridge,
@@ -172,11 +173,7 @@ async function chromeChatLoop(terminal) {
       continue;
     }
 
-    process.stdout.write("ChatGPT > ");
-    await chromeSendMessage(prompt, {
-      onDelta: (delta) => process.stdout.write(delta),
-    });
-    process.stdout.write("\n\n");
+    await replyWhileWaiting(() => chromeSendMessage(prompt));
   }
 }
 
@@ -225,11 +222,7 @@ async function chatLoop(page, terminal) {
       continue;
     }
 
-    process.stdout.write("ChatGPT > ");
-    await sendMessage(page, prompt, {
-      onDelta: (delta) => process.stdout.write(delta),
-    });
-    process.stdout.write("\n\n");
+    await replyWhileWaiting(() => sendMessage(page, prompt));
   }
 }
 

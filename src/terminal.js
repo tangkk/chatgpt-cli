@@ -5,6 +5,19 @@ export function createTerminal() {
   return readline.createInterface({ input: stdin, output: stdout });
 }
 
+// Replies are printed once ChatGPT has finished, so a placeholder line is shown
+// while waiting and cleared when the reply (or an error) arrives.
+export async function replyWhileWaiting(getReply) {
+  stdout.write("ChatGPT > ChatGPT is replying…");
+  let reply;
+  try {
+    reply = await getReply();
+  } finally {
+    stdout.write(stdout.isTTY ? "\r\x1b[2K" : "\n");
+  }
+  stdout.write(`ChatGPT > ${reply}\n\n`);
+}
+
 export function printConversations(conversations) {
   if (!conversations.length) {
     console.log("No recent conversations were found in the ChatGPT sidebar.");

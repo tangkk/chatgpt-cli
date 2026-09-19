@@ -8,13 +8,15 @@
   },
   "scripts": {
     "start": "node src/cli.js",
-    "check": "node --check src/cli.js && node --check src/browser.js && node --check src/chatgpt.js && node --check src/chrome.js && node --check src/response.js && node --check src/terminal.js",
+    "check": "node --check src/cli.js && node --check src/browser.js && node --check src/chatgpt.js && node --check src/chrome.js && node --check src/markdown.js && node --check src/response.js && node --check src/snapshot.js && node --check src/terminal.js",
     "test": "node --test"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "playwright-core": "^1.55.0"
+    "playwright-core": "^1.55.0",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2"
   }
 }
