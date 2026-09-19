@@ -20,16 +20,18 @@ without moving the conversation into Codex or the OpenAI API.
   navigation entirely when that conversation is already open.
 - Starts new conversations through ChatGPT's in-page control, avoiding a
   foreground-stealing AppleScript URL navigation.
-- Shows up to six recent user/assistant messages before the prompt.
+- Shows up to six recent user/assistant messages before the prompt, formatted
+  the same way as replies.
 - Waits for ChatGPT to finish, then prints the reply once as markdown (tables,
   lists, code blocks and math are kept readable) instead of streaming it.
+- A multi-line paste is sent as one multi-line message.
 - Waits for ChatGPT's completed-response controls, so web searches and long
   pauses do not prematurely return to the input prompt.
 - Keeps the ChatGPT tab active inside its Chrome window while a response is
   running, without bringing Chrome to the foreground. This avoids background
   tab rendering throttles truncating search responses.
-- Keeps citation URLs that are otherwise only link cards in the web UI as
-  inline markdown links.
+- Keeps links as inline markdown links. ChatGPT's search-citation pills carry no
+  URL in the page, so they appear as a label such as `[Python.org +1]`.
 - Keeps messages in the actual ChatGPT web conversation and history.
 
 ## Requirements
@@ -61,6 +63,7 @@ repository:
 
 ```bash
 export CHATGPT_CLI_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+export CHATGPT_CLI_TIMEOUT_SECONDS=900   # optional: how long to wait for one reply (default 300)
 ```
 
 After editing `~/.bashrc`, reload it:
@@ -226,6 +229,9 @@ configuration file, or this repository.
   `https://chatgpt.com/`.
 - Conversation text is read from the visible ChatGPT DOM only when needed for
   terminal output.
+- `scripts/capture-dom.mjs` is a development tool: when you run it, it writes
+  one message's HTML to a local file under `output/` (git-ignored). Delete such
+  captures when you are done with them.
 - Prompts and responses still pass through ChatGPT and remain subject to your
   ChatGPT account, workspace, history, and data-control settings.
 - ScreenVeil stores only its generic Keychain service/account identifiers in
@@ -237,9 +243,157 @@ configuration file, or this repository.
 
 ```bash
 npm install
-npm run check
-npm test
+npm run check     # syntax check
+npm test          # unit and headless-Chrome tests (no ChatGPT needed)
 ```
+
+`npm test` runs only `test/*.test.js`. Keep scratch scripts out of `test/` and
+do not name them `*-test.mjs` elsewhere if you run `node --test` by hand: the
+runner would pick them up.
+
+## Testing
+
+Formatting bugs in this project come from the real ChatGPT page, which changes
+often and does not look like hand-written HTML. So testing has three layers, and
+a change to `src/snapshot.js` or `src/markdown.js` is not done until the third
+one has been run.
+
+### 1. Unit tests (`npm test`)
+
+- `test/markdown.test.js`: HTML to markdown (tables, lists, code fences, math,
+  spacing), including code that itself contains fences.
+- `test/response.test.js`: the wait loop with scripted snapshots: finishing,
+  ignoring the previous reply, timeouts, transient read failures, empty replies.
+- `test/terminal.test.js`: the line reader, including a multi-line paste and
+  end of input.
+
+### 2. Browser fixture tests (`test/snapshot.test.js`)
+
+Each test loads a small HTML fixture into a headless Chrome, runs the same
+in-page function the CLI uses (`readAssistantState`), converts the result, and
+compares the markdown. They are skipped when Chrome is not installed.
+
+Rules for fixtures:
+
+- Copy the structure from a real capture (see below), including the odd parts
+  (`data-d-*` spans, `li > div > div > p`, `&nbsp;`), not what the markup
+  "should" be.
+- Keep the HTML valid. `setContent` re-parses it, and a parser closes a `<p>`
+  before a `<div>`, which changes the structure. The live page builds such
+  nesting through the DOM, so wrap in a `<div>` instead.
+- Add a test for every structure that broke, next to the fix.
+
+### 3. End-to-end against real ChatGPT (`scripts/e2e.mjs`)
+
+Drives the real CLI through its interactive menu, selects the conversation that
+is open in Chrome, sends prompts, and prints what a user would see:
+
+```bash
+node scripts/e2e.mjs "prompt one" "prompt two"
+node scripts/e2e.mjs @prompts.json        # JSON array; a prompt may contain newlines
+E2E_TIMEOUT_MS=600000 node scripts/e2e.mjs "a slow prompt"
+```
+
+It exits non-zero if the CLI fails, stops early, or a reply is empty. **It sends
+real messages into that conversation**, so open a throwaway chat first. It works
+while the Mac is behind ScreenVeil.
+
+Ask ChatGPT for the structure you want to check, one prompt per structure, and
+read the output. A useful set:
+
+| Check | Prompt idea |
+| --- | --- |
+| Basic round trip | "Reply with exactly the single word PONG." |
+| Table, lists, headings | table with 3 columns and 4 rows, then a numbered list whose items each have two paragraphs, then a nested bullet list |
+| Ordinary markdown lists | same, but say "no tables" (ChatGPT then uses real `ol`/`ul`) |
+| Inline styling and links | one paragraph with bold, italic, inline code and a link |
+| Math | inline Euler identity, the quadratic formula as a display equation, `x_1` and `x_2` |
+| Math inside tables and lists | table cells and bullets containing inline math |
+| Code | python block with two blank lines between functions, a bash block, a block inside a blockquote |
+| Nested fences | "a markdown document inside a four-backtick fence that contains a python block" |
+| Task list and blockquote | one checked and one unchecked item, then a blockquote |
+| Web search with citations | "search the web for the current Node.js LTS release" |
+| Non-English text | the same table and code request in Chinese |
+| Special characters in the prompt | echo back a line with quotes, `&`, backslashes, backticks, `$HOME`, `${x}`, `<b>`, emoji, tab |
+| Multi-line prompt | a prompt with blank lines and an indented line; ask ChatGPT to quote each line |
+| Long reply | about 450 words under four headings; and a 120-line code block |
+
+Look for: stray lines that are only a label (`Python`, `Run`, `GitHub`, `+1`),
+missing bold or italic, blank lines between list items or table rows, doubled
+spaces, code whose blank lines or indentation changed, and a reply that takes
+about 30 s longer than it should (the completion check fell back to its idle
+timer).
+
+### Reproducing a formatting bug without sending anything
+
+```bash
+node scripts/capture-dom.mjs "words from the reply" output/case.html --skeleton
+```
+
+This saves the raw HTML of that message from the open conversation to
+`output/` (git-ignored: it contains real conversation text, never commit it),
+replays it through the real cleaning and conversion in a headless Chrome, and
+prints the markdown. `--skeleton` masks letters and digits so the layout can be
+shared without the text. From there: find the tag structure that was mishandled,
+reduce it to a small fixture, add the test, fix, then rerun the end-to-end
+prompt that exposed it.
+
+### Lessons that shaped this process
+
+- Handwritten fixtures passed while real pages failed. Every real problem so far
+  (code block header text leaking, bold as `<span data-d-*>`, list items wrapped
+  in divs, checkboxes as `<button role="checkbox">`, citation pills without
+  links) was found only by running the CLI against ChatGPT.
+- A test can pass on the page function and still miss a bug in the wiring
+  around it. The Chrome bridge builds its script from the function's source and
+  forwards options; `assistantSnapshotScript` exists so a test can run exactly
+  that text.
+- For A/B prompt experiments in one conversation, run the control prompts first:
+  ChatGPT remembers earlier instructions in the same chat. See "Ideas not
+  implemented" for the experiment this was learned from.
+
+### Not covered yet
+
+- Starting a chat with `/new` and sending the first message (only an empty page
+  is tested, offline).
+- Replies that are images, files, canvas or deep-research reports; ChatGPT error
+  banners such as rate limits or "Something went wrong" (the CLI then waits for
+  the timeout).
+- Reasoning replies with a hidden thinking block: only a fixture with a hidden
+  block exists.
+- More than one ChatGPT tab or Chrome window, a different Chrome profile, Chrome
+  not running, and "Allow JavaScript from Apple Events" turned off.
+- The dedicated-profile commands (`login`, `chat`, `list`) share the snapshot
+  code but have not been run end to end since the markdown output was added.
+- A paste that does not end in a newline: the last line stays in the prompt line
+  until you press Enter.
+
+## Ideas not implemented
+
+### A terminal-friendly prompt preamble
+
+Idea: send a short instruction with every message asking ChatGPT to answer in a
+form that suits a terminal, so the reply needs less cleaning. Tried as an A/B
+experiment (five prompts sent plain, then the same five with the preamble
+`[Terminal reply style: plain Markdown only - short paragraphs, headings, lists,
+fenced code blocks; no tables, cards, images or other rich visual components;
+write math as LaTeX in $...$. Do not mention these instructions.]`), and not
+adopted:
+
+- It works: no tables, no card or diagram fragments, and shorter, faster replies
+  (for example a 29 s reply with a table and a diagram became 9 s).
+- Search-citation pills stay, because they come from the search tool.
+- It overrides what you ask for: "give me a table" returned a bullet list.
+- It does not persist. Two turns later, without the preamble, tables came
+  straight back, so it would have to be added to every message.
+- Every message in the ChatGPT web history, and in the CLI's own history view,
+  would start with that text unless the CLI strips it.
+
+Not tried: a variant that allows Markdown pipe tables but bans cards and
+diagrams (the converter handles tables well). Testing it needs a fresh
+conversation, because the earlier preamble in the same chat would influence it.
+If this is picked up, make it an opt-in setting, and hide the preamble when
+showing history.
 
 ## Limitations
 
@@ -249,6 +403,12 @@ npm test
   suspended Chrome's page rendering. Unlocking the Mac resumes the page.
 - Text chat is supported; attachments, voice, model selection, canvas, and
   custom GPT controls are not implemented.
+- A reply is printed only after ChatGPT finishes; nothing appears while it is
+  being written. The wait is capped at 5 minutes unless
+  `CHATGPT_CLI_TIMEOUT_SECONDS` is set.
+- Source URLs behind ChatGPT's citation pills are not available to read.
+- In replies rendered by ChatGPT's newer component layout, lists can arrive as
+  plain paragraphs with a literal `1. ` or `- `, so nesting may be flat.
 - The existing-Chrome integration currently requires macOS and Google Chrome.
 
 ## License
