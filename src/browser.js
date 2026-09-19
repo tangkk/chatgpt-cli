@@ -9,11 +9,11 @@ const DEFAULT_HOME = path.join(
   os.homedir(),
   "Library",
   "Application Support",
-  "chatgpt-web-cli",
+  "chatgpt-cli",
 );
 
 export function dataDir() {
-  return process.env.CHATGPT_WEB_CLI_HOME || DEFAULT_HOME;
+  return process.env.CHATGPT_CLI_HOME || DEFAULT_HOME;
 }
 
 export function profileDir() {
@@ -28,7 +28,7 @@ function ensureProfileDir() {
 
 export function chromeExecutable() {
   return (
-    process.env.CHATGPT_WEB_CLI_CHROME ||
+    process.env.CHATGPT_CLI_CHROME ||
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
   );
 }
@@ -55,7 +55,7 @@ export async function launchLoginBrowser() {
   const executable = chromeExecutable();
   if (!fs.existsSync(executable)) {
     throw new Error(
-      `Google Chrome was not found at ${executable}. Set CHATGPT_WEB_CLI_CHROME to its executable path.`,
+      `Google Chrome was not found at ${executable}. Set CHATGPT_CLI_CHROME to its executable path.`,
     );
   }
 

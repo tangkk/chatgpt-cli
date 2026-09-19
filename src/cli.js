@@ -34,20 +34,20 @@ import {
 } from "./chrome.js";
 
 function usage() {
-  console.log(`chatgpt-web - use real ChatGPT web conversations from the terminal
+  console.log(`chatgpt-cli - use real ChatGPT web conversations from the terminal
 
 Usage:
-  chatgpt-web                      Use the ChatGPT session in your open Chrome
-  chatgpt-web chrome               Same as above
-  chatgpt-web chrome-check         Check the existing-Chrome bridge
-  chatgpt-web chrome-list          List chats from existing Chrome
+  chatgpt-cli                      Use the ChatGPT session in your open Chrome
+  chatgpt-cli chrome               Same as above
+  chatgpt-cli chrome-check         Check the existing-Chrome bridge
+  chatgpt-cli chrome-list          List chats from existing Chrome
 
 Isolated-profile fallback:
-  chatgpt-web login                Sign in using a dedicated Chrome profile
-  chatgpt-web status               Verify the dedicated profile login
-  chatgpt-web list [--limit N]     List chats from the dedicated profile
-  chatgpt-web chat [ID]            Continue a dedicated-profile chat
-  chatgpt-web new                  Start a dedicated-profile chat
+  chatgpt-cli login                Sign in using a dedicated Chrome profile
+  chatgpt-cli status               Verify the dedicated profile login
+  chatgpt-cli list [--limit N]     List chats from the dedicated profile
+  chatgpt-cli chat [ID]            Continue a dedicated-profile chat
+  chatgpt-cli new                  Start a dedicated-profile chat
 
 Options:
   --headed                         Show Chrome (useful for login challenges)
@@ -63,7 +63,7 @@ In-chat commands:
 
 function parseArgs(argv) {
   const args = [...argv];
-  let headed = process.env.CHATGPT_WEB_CLI_HEADED === "1";
+  let headed = process.env.CHATGPT_CLI_HEADED === "1";
   let limit = 30;
   const positional = [];
 
@@ -100,7 +100,7 @@ async function login() {
     await openChatGPT(page);
     if (!(await isLoggedIn(page))) {
       throw new Error(
-        "ChatGPT login was not detected. Run `chatgpt-web login` again and make sure ChatGPT shows your signed-in account before pressing Enter.",
+        "ChatGPT login was not detected. Run `chatgpt-cli login` again and make sure ChatGPT shows your signed-in account before pressing Enter.",
       );
     }
     console.log("ChatGPT login verified and saved successfully.");

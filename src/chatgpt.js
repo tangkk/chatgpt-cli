@@ -65,7 +65,7 @@ export async function requireLogin(page) {
     await sleep(500);
   }
   throw new Error(
-    "Not signed in to ChatGPT. Run `chatgpt-web login` first. If headless mode is being challenged, retry with --headed.",
+    "Not signed in to ChatGPT. Run `chatgpt-cli login` first. If headless mode is being challenged, retry with --headed.",
   );
 }
 

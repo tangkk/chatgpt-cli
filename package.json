@@ -1,10 +1,10 @@
 {
-  "name": "chatgpt-web-cli",
+  "name": "chatgpt-cli",
   "version": "0.1.0",
   "description": "A terminal client for continuing real ChatGPT web conversations through a persistent browser session.",
   "type": "module",
   "bin": {
-    "chatgpt-web": "src/cli.js"
+    "chatgpt-cli": "src/cli.js"
   },
   "scripts": {
     "start": "node src/cli.js",

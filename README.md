@@ -1,4 +1,4 @@
-# chatgpt-web-cli
+# chatgpt-cli
 
 An experimental terminal client for your real ChatGPT web conversations. It
 uses the ChatGPT session already open in Google Chrome, lists recent chats,
@@ -52,7 +52,7 @@ npm install
 npm link
 ```
 
-This installs the `chatgpt-web` command.
+This installs the `chatgpt-cli` command.
 
 ## Configuration
 
@@ -60,7 +60,7 @@ Machine-specific settings should live in your shell configuration, not in the
 repository:
 
 ```bash
-export CHATGPT_WEB_CLI_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+export CHATGPT_CLI_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 ```
 
 After editing `~/.bashrc`, reload it:
@@ -84,14 +84,14 @@ ChatGPT tab already open in regular Chrome.
 3. Keep Chrome running and verify the connection:
 
    ```bash
-   chatgpt-web chrome-check
+   chatgpt-cli chrome-check
    ```
 
 macOS may ask whether Terminal can control Google Chrome. This permission is
 required for opening a ChatGPT tab, reading its visible conversation UI, and
 sending messages.
 
-You can run `chatgpt-web` from an SSH terminal, but the Mac must keep an active,
+You can run `chatgpt-cli` from an SSH terminal, but the Mac must keep an active,
 unlocked desktop login with Chrome running. Screen lock and some screen savers
 pause the ChatGPT page, so replies may not reach the terminal until the Mac is
 unlocked. This is a limitation of controlling the real Chrome UI, not an SSH
@@ -102,7 +102,7 @@ connection problem.
 Start the interactive client:
 
 ```bash
-chatgpt-web
+chatgpt-cli
 ```
 
 Choose a numbered conversation, `n` for a new chat, `r` to refresh, or `q` to
@@ -112,12 +112,12 @@ is printed before the `You >` prompt.
 Available commands:
 
 ```text
-chatgpt-web                 Use the session in your existing Chrome
-chatgpt-web chrome          Same as above
-chatgpt-web chrome-check    Verify the Chrome bridge
-chatgpt-web chrome-list     List recent conversations
-chatgpt-web --limit 50      Change the conversation-list limit
-chatgpt-web --help          Show command help
+chatgpt-cli                 Use the session in your existing Chrome
+chatgpt-cli chrome          Same as above
+chatgpt-cli chrome-check    Verify the Chrome bridge
+chatgpt-cli chrome-list     List recent conversations
+chatgpt-cli --limit 50      Change the conversation-list limit
+chatgpt-cli --help          Show command help
 ```
 
 Commands available during a chat:
@@ -171,7 +171,7 @@ choose with `--restore N` (0 to 100):
 If ScreenVeil is killed instead of unlocked, an external monitor stays dim.
 Reset it by hand, for example `ddcctl -d 1 -b 80`.
 
-### Use ScreenVeil with chatgpt-web over SSH
+### Use ScreenVeil with chatgpt-cli over SSH
 
 On the Mac, while the desktop is unlocked:
 
@@ -192,10 +192,10 @@ machine, connect over SSH and start the normal existing-Chrome client:
 
 ```bash
 ssh your-mac
-chatgpt-web
+chatgpt-cli
 ```
 
-Do not use `chatgpt-web login`, a separate browser profile, or a headless mode
+Do not use `chatgpt-cli login`, a separate browser profile, or a headless mode
 for this workflow. Enter the ScreenVeil password locally on the Mac when you
 want to reveal the desktop; exiting ScreenVeil also ends its `caffeinate`
 process.
@@ -206,7 +206,7 @@ For this arrangement to keep working:
 - Do not run `pmset displaysleepnow` or allow automatic display/system sleep.
 - Keep the Mac awake and, for a laptop, do not close the lid unless it is in a
   supported awake clamshell configuration.
-- Keep Chrome running. `chatgpt-web` may select the ChatGPT tab inside its
+- Keep Chrome running. `chatgpt-cli` may select the ChatGPT tab inside its
   Chrome window, but ScreenVeil remains visually above it.
 
 On first use, enter and confirm a ScreenVeil password. The password is passed
