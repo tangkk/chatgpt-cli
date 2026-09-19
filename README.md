@@ -40,7 +40,8 @@ without moving the conversation into Codex or the OpenAI API.
 - Node.js 20 or newer
 - Google Chrome
 - A regular Chrome profile signed in to ChatGPT
-- An active, unlocked macOS desktop session
+- A logged-in macOS desktop session with Chrome running. The screen may be
+  locked (see "Running over SSH"); the Mac must stay awake.
 
 The existing-Chrome bridge uses Chrome's built-in Apple Events support and is
 currently macOS-only.
@@ -94,11 +95,22 @@ macOS may ask whether Terminal can control Google Chrome. This permission is
 required for opening a ChatGPT tab, reading its visible conversation UI, and
 sending messages.
 
-You can run `chatgpt-cli` from an SSH terminal, but the Mac must keep an active,
-unlocked desktop login with Chrome running. Screen lock and some screen savers
-pause the ChatGPT page, so replies may not reach the terminal until the Mac is
-unlocked. This is a limitation of controlling the real Chrome UI, not an SSH
-connection problem.
+### Running over SSH
+
+You can run `chatgpt-cli` from an SSH terminal. The Mac must stay logged in,
+awake, and with Chrome running; `chatgpt-cli` controls the real Chrome UI, so
+this is not an SSH limitation.
+
+A locked screen works: replies complete and reach the terminal while the Mac is
+locked (observed on macOS 12.7). Earlier versions of this README said that
+locking the screen paused the ChatGPT page; that is no longer what is seen.
+What has not been tried: screen savers, display sleep, other macOS or Chrome
+versions. System sleep or a closed lid stops Chrome, so keep the Mac awake, for
+example with `caffeinate -di`.
+
+If the native lock screen works for you, use it while you are away: unlike
+ScreenVeil below, it is a real security boundary. ScreenVeil is only needed if
+a locked screen still pauses the page on your setup.
 
 ## Usage
 
@@ -132,6 +144,13 @@ Commands available during a chat:
 ```
 
 ## Optional ScreenVeil helper
+
+> [!NOTE]
+> You probably do not need ScreenVeil any more. It was added because locking the
+> screen used to pause the ChatGPT page; with a locked screen now working (see
+> "Running over SSH"), the native lock screen is the better choice. ScreenVeil
+> remains for setups where a locked screen still stops replies, or where you want
+> a dimmed, covered desktop without locking.
 
 [`screenveil.sh`](./screenveil.sh) provides a password-protected visual cover
 for the active macOS desktop without invoking the macOS lock screen or putting
@@ -176,7 +195,8 @@ Reset it by hand, for example `ddcctl -d 1 -b 90`.
 
 ### Use ScreenVeil with chatgpt-cli over SSH
 
-On the Mac, while the desktop is unlocked:
+Only needed if a locked screen still pauses the page on your Mac. On the Mac,
+while the desktop is unlocked:
 
 1. Open regular Chrome, sign in to ChatGPT, and leave a ChatGPT tab open.
 2. Enable Chrome's **View → Developer → Allow JavaScript from Apple Events**.
@@ -295,8 +315,9 @@ E2E_TIMEOUT_MS=600000 node scripts/e2e.mjs "a slow prompt"
 ```
 
 It exits non-zero if the CLI fails, stops early, or a reply is empty. **It sends
-real messages into that conversation**, so open a throwaway chat first. It works
-while the Mac is behind ScreenVeil.
+real messages into that conversation**, so open a throwaway chat first. The
+end-to-end runs recorded in this project were made with the Mac behind
+ScreenVeil; they have not been repeated with a locked screen.
 
 Ask ChatGPT for the structure you want to check, one prompt per structure, and
 read the output. A useful set:
@@ -399,8 +420,10 @@ showing history.
 
 - ChatGPT UI changes may break selectors.
 - Only chats loaded in the sidebar can be listed.
-- SSH operation is not reliable while macOS is locked or a screen saver has
-  suspended Chrome's page rendering. Unlocking the Mac resumes the page.
+- The Mac must stay logged in, awake and with Chrome running. A locked screen has
+  been observed to work (macOS 12.7); screen savers, display sleep and other
+  macOS or Chrome versions are untested. If the page pauses on your setup,
+  unlocking resumes it, or see the ScreenVeil section.
 - Text chat is supported; attachments, voice, model selection, canvas, and
   custom GPT controls are not implemented.
 - A reply is printed only after ChatGPT finishes; nothing appears while it is
