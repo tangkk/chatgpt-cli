@@ -22,7 +22,7 @@ private let service = "io.github.chatgpt-web-cli.screenveil"
 private let account = "unlock-password"
 
 private func requestedBrightness() -> Float {
-    guard let index = CommandLine.arguments.firstIndex(of: "--brightness") else { return 0.20 }
+    guard let index = CommandLine.arguments.firstIndex(of: "--brightness") else { return 0.10 }
     guard index + 1 < CommandLine.arguments.count,
           let value = Float(CommandLine.arguments[index + 1]),
           (0...1).contains(value) else {
@@ -33,6 +33,27 @@ private func requestedBrightness() -> Float {
 }
 
 private let targetBrightness = requestedBrightness()
+
+// External monitors expose no IODisplayConnect brightness, so they are dimmed
+// over DDC/CI with ddcctl (brew install ddcctl). The current level is read
+// before dimming and restored on unlock. Some monitors never answer DDC reads
+// (e.g. Dell U2520DR here), so fall back to a fixed level, or to --restore N.
+private let fallbackRestoreLevel = 80
+
+private func requestedRestoreLevel() -> Int? {
+    guard let index = CommandLine.arguments.firstIndex(of: "--restore") else { return nil }
+    guard index + 1 < CommandLine.arguments.count,
+          let value = Int(CommandLine.arguments[index + 1]),
+          (0...100).contains(value) else {
+        fputs("ScreenVeil: --restore must be an integer between 0 and 100.\n", stderr)
+        exit(2)
+    }
+    return value
+}
+
+private let restoreLevel = requestedRestoreLevel()
+private let ddcctlPath = ["/usr/local/bin/ddcctl", "/opt/homebrew/bin/ddcctl"]
+    .first { FileManager.default.isExecutableFile(atPath: $0) }
 
 final class LockWindow: NSWindow {
     override var canBecomeKey: Bool { true }
@@ -48,6 +69,7 @@ final class ScreenVeil: NSObject, NSApplicationDelegate {
     private var allowTermination = false
     private weak var primaryWindow: LockWindow?
     private var originalBrightness: [(service: io_service_t, value: Float)] = []
+    private var externalRestoreLevels: [Int] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         isSettingPassword = storedPassword() == nil
@@ -55,6 +77,7 @@ final class ScreenVeil: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         focusPasswordField()
         dimDisplays(to: targetBrightness)
+        dimExternalDisplays(to: Int((targetBrightness * 100).rounded()))
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -63,6 +86,7 @@ final class ScreenVeil: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         restoreDisplayBrightness()
+        restoreExternalDisplays()
     }
 
     private func buildOverlayWindows() {
@@ -235,6 +259,55 @@ final class ScreenVeil: NSObject, NSApplicationDelegate {
                 IOObjectRelease(display)
             }
         }
+    }
+
+    private var externalDisplayCount: Int {
+        NSScreen.screens
+            .compactMap { $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID }
+            .filter { CGDisplayIsBuiltin($0) == 0 }
+            .count
+    }
+
+    private func runDDCCtl(display: Int, _ arguments: [String]) -> String {
+        guard let path = ddcctlPath else { return "" }
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = ["-d", String(display), "-W", "50000000"] + arguments
+        process.standardOutput = output
+        process.standardError = output
+        guard (try? process.run()) != nil else { return "" }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    private func readExternalBrightness(display: Int) -> Int? {
+        let output = runDDCCtl(display: display, ["-b", "?"])
+        guard let pattern = try? NSRegularExpression(pattern: #"current: (\d+), max: (\d+)"#),
+              let match = pattern.firstMatch(in: output, range: NSRange(output.startIndex..., in: output)),
+              let currentRange = Range(match.range(at: 1), in: output),
+              let maxRange = Range(match.range(at: 2), in: output),
+              let current = Int(output[currentRange]),
+              let maximum = Int(output[maxRange]),
+              maximum > 0 else { return nil }
+        return current
+    }
+
+    private func dimExternalDisplays(to level: Int) {
+        let count = externalDisplayCount
+        guard ddcctlPath != nil, count > 0 else { return }
+        externalRestoreLevels = (1...count).map { readExternalBrightness(display: $0) ?? fallbackRestoreLevel }
+        for display in 1...count {
+            _ = runDDCCtl(display: display, ["-b", String(level)])
+        }
+    }
+
+    private func restoreExternalDisplays() {
+        for (offset, recorded) in externalRestoreLevels.enumerated() {
+            _ = runDDCCtl(display: offset + 1, ["-b", String(restoreLevel ?? recorded)])
+        }
+        externalRestoreLevels.removeAll()
     }
 
     private func restoreDisplayBrightness() {

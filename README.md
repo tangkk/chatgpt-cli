@@ -146,7 +146,7 @@ Start it:
 ./screenveil.sh
 ```
 
-ScreenVeil dims supported displays to 20% brightness by default. Override it
+ScreenVeil dims supported displays to 10% brightness by default. Override it
 with a value from `0.0` to `1.0`:
 
 ```bash
@@ -154,8 +154,21 @@ with a value from `0.0` to `1.0`:
 ```
 
 The original brightness is restored after a successful ScreenVeil unlock.
-External displays that do not expose brightness control through macOS IOKit are
-left unchanged.
+
+Built-in displays are dimmed through macOS IOKit. External monitors do not
+expose brightness that way, so they are dimmed over DDC/CI with
+[`ddcctl`](https://github.com/kfix/ddcctl) (`brew install ddcctl`) when it is
+installed; without it they are left unchanged. ScreenVeil reads the monitor's
+current brightness before dimming and restores it on unlock. Some monitors
+never answer DDC reads; for those it restores to 80 instead, or to a level you
+choose with `--restore N` (0 to 100):
+
+```bash
+./screenveil.sh --restore 70
+```
+
+If ScreenVeil is killed instead of unlocked, an external monitor stays dim.
+Reset it by hand, for example `ddcctl -d 1 -b 80`.
 
 ### Use ScreenVeil with chatgpt-web over SSH
 
@@ -168,7 +181,7 @@ On the Mac, while the desktop is unlocked:
 
    ```bash
    cd chatgpt-cli
-   caffeinate -di ./screenveil.sh                 # default: 20%
+   caffeinate -di ./screenveil.sh                 # default: 10%
    # or: caffeinate -di ./screenveil.sh --brightness 0.35
    ```
 
